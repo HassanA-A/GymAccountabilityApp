@@ -8,6 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { colors, radius, shadow, space } from '@/lib/theme';
 
 export function PrimaryButton({
@@ -59,14 +60,29 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
   return <View style={[styles.card, shadow.card, style]}>{children}</View>;
 }
 
-export function Avatar({ name, color, size = 34 }: { name: string; color: string; size?: number }) {
+export function Avatar({
+  name,
+  color,
+  size = 34,
+  uri,
+}: {
+  name: string;
+  color: string;
+  size?: number;
+  uri?: string | null;
+}) {
+  const dim = { width: size, height: size, borderRadius: size * 0.34 };
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={[styles.avatar, dim, { backgroundColor: colors.surface2 }]}
+        contentFit="cover"
+      />
+    );
+  }
   return (
-    <View
-      style={[
-        styles.avatar,
-        { width: size, height: size, borderRadius: size * 0.34, backgroundColor: color },
-      ]}
-    >
+    <View style={[styles.avatar, dim, { backgroundColor: color }]}>
       <Text style={[styles.avatarText, { fontSize: size * 0.42 }]}>
         {name.trim().charAt(0).toUpperCase() || '?'}
       </Text>
