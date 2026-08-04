@@ -206,6 +206,28 @@ export async function undoTodayCheckIn(checkInId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export async function savePushToken(userId: string, token: string): Promise<void> {
+  void userId; // The RPC binds ownership to auth.uid(); never trust a client-supplied id.
+  const { error } = await supabase.rpc('register_push_token', {
+    p_token: token,
+    p_platform: Platform.OS,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export type NudgeResult = {
+  delivered: boolean;
+  reason?: 'not_registered' | 'rate_limited' | 'delivery_failed';
+};
+
+export async function sendNudge(groupId: string, recipientId: string): Promise<NudgeResult> {
+  const { data, error } = await supabase.functions.invoke('send-nudge', {
+    body: { groupId, recipientId },
+  });
+  if (error) throw new Error(error.message);
+  return data as NudgeResult;
+}
+
 async function getStreak(userId: string, groupId: string): Promise<number> {
   const { data, error } = await supabase.rpc('weekly_streak', {
     p_user_id: userId,

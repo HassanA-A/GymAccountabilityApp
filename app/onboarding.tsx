@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,14 +12,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { createGroup, joinGroupByCode } from '@/lib/db';
+import { useActiveGroup } from '@/lib/active-group';
 import { Milo } from '@/components/Milo';
 import { PrimaryButton } from '@/components/ui';
-import { colors, radius, space } from '@/lib/theme';
+import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type Tab = 'create' | 'join';
 
 export default function Onboarding() {
   const router = useRouter();
+  const { groups, setActiveGroup, refreshGroups } = useActiveGroup();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tab, setTab] = useState<Tab>('create');
   const [name, setName] = useState('');
   const [target, setTarget] = useState(4);
@@ -31,19 +35,22 @@ export default function Onboarding() {
     setError(null);
     setBusy(true);
     try {
+      let addedGroup;
       if (tab === 'create') {
         if (!name.trim()) {
           setError('Give your crew a name.');
           return;
         }
-        await createGroup(name, target);
+        addedGroup = await createGroup(name, target);
       } else {
         if (code.trim().length < 4) {
           setError('Enter the invite code your friend sent you.');
           return;
         }
-        await joinGroupByCode(code);
+        addedGroup = await joinGroupByCode(code);
       }
+      await refreshGroups();
+      await setActiveGroup(addedGroup);
       router.replace('/(tabs)/today');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -61,7 +68,7 @@ export default function Onboarding() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.hero}>
             <Milo mood="happy" size={116} />
-            <Text style={styles.title}>Start your crew</Text>
+            <Text style={styles.title}>{groups.length ? 'Add a crew' : 'Start your crew'}</Text>
             <Text style={styles.subtitle}>
               A crew is you and a few friends chasing the same weekly goal.
             </Text>
@@ -118,6 +125,7 @@ export default function Onboarding() {
 }
 
 function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const styles = useStyles();
   return (
     <Pressable onPress={onPress} style={[styles.seg, active && styles.segOn]}>
       <Text style={[styles.segText, active && styles.segTextOn]}>{label}</Text>
@@ -129,6 +137,8 @@ function Field({
   label,
   ...props
 }: { label: string } & React.ComponentProps<typeof TextInput>) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={{ gap: space(1.5) }}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -137,7 +147,12 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: space(6), gap: space(5) },

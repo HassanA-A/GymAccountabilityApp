@@ -1,8 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,13 +12,18 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
 import { useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
+import { choosePhotoSource, showMessage } from '@/lib/dialog';
 import { getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
 import { Card, GhostButton, colorFor } from '@/components/ui';
-import { colors, radius, space } from '@/lib/theme';
+import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export default function You() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +54,7 @@ export default function You() {
       const url = await updateAvatar(user.id, uri);
       setProfile((p) => (p ? { ...p, avatar_url: url } : p));
     } catch (e) {
-      Alert.alert('Could not update photo', e instanceof Error ? e.message : 'Please try again.');
+      showMessage('Could not update photo', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setUploading(false);
     }
@@ -70,7 +73,7 @@ export default function You() {
   async function takePhoto() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Camera access needed', 'Turn on camera access to take a profile photo.');
+      showMessage('Camera access needed', 'Turn on camera access to take a profile photo.');
       return;
     }
     const res = await ImagePicker.launchCameraAsync({
@@ -81,17 +84,10 @@ export default function You() {
     if (!res.canceled) applyPhoto(res.assets[0].uri);
   }
 
-  function changePhoto() {
-    // Camera isn't meaningful in a desktop browser — go straight to the picker.
-    if (Platform.OS === 'web') {
-      pickFromLibrary();
-      return;
-    }
-    Alert.alert('Profile photo', undefined, [
-      { text: 'Take photo', onPress: takePhoto },
-      { text: 'Choose from library', onPress: pickFromLibrary },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  async function changePhoto() {
+    const source = await choosePhotoSource();
+    if (source === 'camera') await takePhoto();
+    if (source === 'library') await pickFromLibrary();
   }
 
   if (loading) {
@@ -138,7 +134,12 @@ export default function You() {
         </View>
 
         <Card style={{ gap: space(3) }}>
-          <Text style={styles.cardTitle}>Your crews</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Your crews</Text>
+            <Pressable onPress={() => router.push('/onboarding')} style={styles.addCrew}>
+              <Text style={styles.addCrewText}>+ Add crew</Text>
+            </Pressable>
+          </View>
           {groups.length === 0 ? (
             <Text style={styles.muted}>You’re not in a crew yet.</Text>
           ) : (
@@ -165,7 +166,7 @@ export default function You() {
 
 const AVATAR = 112;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: space(6), paddingBottom: space(10) },
@@ -197,6 +198,9 @@ const styles = StyleSheet.create({
   handle: { fontSize: 14, color: colors.inkSoft, fontWeight: '600' },
   changeHint: { fontSize: 12, color: colors.inkFaint, fontWeight: '600', marginTop: space(1) },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  addCrew: { paddingVertical: space(1), paddingHorizontal: space(1) },
+  addCrewText: { color: colors.teal, fontSize: 13, fontWeight: '800' },
   muted: { fontSize: 13, color: colors.inkSoft, fontWeight: '500' },
   crewRow: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   crewName: { fontSize: 15, fontWeight: '700', color: colors.ink },

@@ -1,7 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Share,
@@ -13,17 +12,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
+import { useActiveGroup } from '@/lib/active-group';
+import { confirmAction, showMessage } from '@/lib/dialog';
 import {
   getCrew,
   getFeed,
-  getMyGroups,
+  sendNudge,
   type CrewMember,
   type CrewView,
   type FeedItem,
 } from '@/lib/db';
 import { relativeDayLabel, weekDayLabels } from '@/lib/date';
-import { Avatar, Card, colorFor } from '@/components/ui';
-import { colors, radius, space } from '@/lib/theme';
+import { Avatar, Card, colorFor, CrewSwitcher } from '@/components/ui';
+import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type View2 = 'week' | 'feed';
 
@@ -31,33 +32,70 @@ const ACTIVITY_LABEL: Record<string, string> = { gym: 'Gym', run: 'Run', lift: '
 
 export default function Crew() {
   const { user } = useAuth();
+  const { activeGroup, loading: groupsLoading, refreshGroups } = useActiveGroup();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [crew, setCrew] = useState<CrewView | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [view, setView] = useState<View2>('week');
   const [loading, setLoading] = useState(true);
+  const [nudgingId, setNudgingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const groups = await getMyGroups();
-      if (!groups[0]) {
-        setCrew(null);
-        return;
-      }
-      const [c, f] = await Promise.all([getCrew(groups[0], user.id), getFeed(groups[0].id)]);
-      setCrew(c);
-      setFeed(f);
-    } finally {
+  useFocusEffect(useCallback(() => {
+    refreshGroups();
+  }, [refreshGroups]));
+
+  useEffect(() => {
+    if (!user || groupsLoading) return;
+    if (!activeGroup) {
+      setCrew(null);
+      setFeed([]);
       setLoading(false);
+      return;
     }
-  }, [user]);
+    let current = true;
+    setLoading(true);
+    setCrew(null);
+    Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id)])
+      .then(([nextCrew, nextFeed]) => {
+        if (!current) return;
+        setCrew(nextCrew);
+        setFeed(nextFeed);
+      })
+      .catch((error) => {
+        if (current) showMessage('Could not load crew', error instanceof Error ? error.message : 'Please try again.');
+      })
+      .finally(() => current && setLoading(false));
+    return () => { current = false; };
+  }, [activeGroup?.id, groupsLoading, user]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  async function nudge(member: CrewMember) {
+    if (!crew) return;
+    const confirmed = await confirmAction({
+      title: `Nudge ${member.profile.display_name}?`,
+      message: `They’ll get a push notification from you for ${crew.group.name}.`,
+      confirmLabel: 'Send nudge',
+    });
+    if (!confirmed) return;
+
+    setNudgingId(member.profile.id);
+    try {
+      const result = await sendNudge(crew.group.id, member.profile.id);
+      if (result.delivered) {
+        showMessage('Nudge sent 👋', `${member.profile.display_name} got your reminder.`);
+      } else if (result.reason === 'not_registered') {
+        showMessage('Couldn’t deliver the nudge', `${member.profile.display_name} hasn’t enabled push notifications yet.`);
+      } else if (result.reason === 'rate_limited') {
+        showMessage('Already nudged', `Give ${member.profile.display_name} a little time—you can nudge them again later.`);
+      } else {
+        showMessage('Couldn’t deliver the nudge', 'The push service did not accept it. Please try again later.');
+      }
+    } catch (error) {
+      showMessage('Could not send nudge', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setNudgingId(null);
+    }
+  }
 
   async function shareCode() {
     if (!crew) return;
@@ -66,7 +104,7 @@ export default function Crew() {
     });
   }
 
-  if (loading) {
+  if (loading || groupsLoading) {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator color={colors.coral} />
@@ -97,6 +135,7 @@ export default function Crew() {
             </Text>
           </View>
         </View>
+        <CrewSwitcher />
 
         <View style={styles.segment}>
           <Seg label="This week" active={view === 'week'} onPress={() => setView('week')} />
@@ -123,6 +162,8 @@ export default function Crew() {
                 member={m}
                 labels={labels}
                 target={crew.group.target_days_per_week}
+                nudging={nudgingId === m.profile.id}
+                onNudge={() => nudge(m)}
               />
             ))}
 
@@ -144,6 +185,7 @@ export default function Crew() {
 }
 
 function Feed({ feed }: { feed: FeedItem[] }) {
+  const styles = useStyles();
   if (feed.length === 0) {
     return (
       <View style={styles.feedEmpty}>
@@ -171,6 +213,7 @@ function Feed({ feed }: { feed: FeedItem[] }) {
 }
 
 function FeedCard({ item }: { item: FeedItem }) {
+  const styles = useStyles();
   const time = new Date(item.created_at).toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
@@ -195,6 +238,7 @@ function FeedCard({ item }: { item: FeedItem }) {
 }
 
 function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const styles = useStyles();
   return (
     <Pressable onPress={onPress} style={[styles.seg, active && styles.segOn]}>
       <Text style={[styles.segText, active && styles.segTextOn]}>{label}</Text>
@@ -206,11 +250,16 @@ function MemberRow({
   member,
   labels,
   target,
+  nudging,
+  onNudge,
 }: {
   member: CrewMember;
   labels: string[];
   target: number;
+  nudging: boolean;
+  onNudge: () => void;
 }) {
+  const styles = useStyles();
   const behind = member.daysHit < target && !member.isMe;
   return (
     <View style={styles.row}>
@@ -225,12 +274,11 @@ function MemberRow({
       </View>
       {behind ? (
         <Pressable
-          onPress={() =>
-            Alert.alert('Nudge sent 👋', `${member.profile.display_name} will get a friendly reminder.`)
-          }
-          style={styles.nudge}
+          onPress={onNudge}
+          disabled={nudging}
+          style={[styles.nudge, nudging && { opacity: 0.55 }]}
         >
-          <Text style={styles.nudgeText}>Nudge</Text>
+          <Text style={styles.nudgeText}>{nudging ? 'Sending…' : 'Nudge'}</Text>
         </Pressable>
       ) : member.streak > 0 ? (
         <Text style={styles.streak}>{member.streak}🔥</Text>
@@ -239,7 +287,12 @@ function MemberRow({
   );
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   empty: { color: colors.inkSoft, fontSize: 15, fontWeight: '600' },

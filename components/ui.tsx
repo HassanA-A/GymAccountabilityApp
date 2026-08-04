@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -9,7 +10,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { colors, radius, shadow, space } from '@/lib/theme';
+import { useActiveGroup } from '@/lib/active-group';
+import { lightColors, radius, shadows, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export function PrimaryButton({
   label,
@@ -24,6 +26,8 @@ export function PrimaryButton({
   disabled?: boolean;
   icon?: ReactNode;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const off = disabled || loading;
   return (
     <Pressable
@@ -31,7 +35,7 @@ export function PrimaryButton({
       disabled={off}
       style={({ pressed }) => [
         styles.btn,
-        shadow.button,
+        shadows(colors).button,
         off && styles.btnOff,
         pressed && !off && styles.btnPressed,
       ]}
@@ -49,6 +53,7 @@ export function PrimaryButton({
 }
 
 export function GhostButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const styles = useStyles();
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.ghost, pressed && { opacity: 0.6 }]}>
       <Text style={styles.ghostText}>{label}</Text>
@@ -57,7 +62,37 @@ export function GhostButton({ label, onPress }: { label: string; onPress: () => 
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[styles.card, shadow.card, style]}>{children}</View>;
+  const { colors } = useTheme();
+  const styles = useStyles();
+  return <View style={[styles.card, shadows(colors).card, style]}>{children}</View>;
+}
+
+export function CrewSwitcher() {
+  const { groups, activeGroup, setActiveGroup } = useActiveGroup();
+  const styles = useStyles();
+  if (groups.length < 2) return null;
+
+  return (
+    <View style={styles.switcherWrap}>
+      <Text style={styles.switcherLabel}>Active crew</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.switcher}>
+        {groups.map((group) => {
+          const active = group.id === activeGroup?.id;
+          return (
+            <Pressable
+              key={group.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => setActiveGroup(group)}
+              style={[styles.crewChip, active && styles.crewChipOn]}
+            >
+              <Text style={[styles.crewChipText, active && styles.crewChipTextOn]}>{group.name}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 }
 
 export function Avatar({
@@ -71,6 +106,8 @@ export function Avatar({
   size?: number;
   uri?: string | null;
 }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
   const dim = { width: size, height: size, borderRadius: size * 0.34 };
   if (uri) {
     return (
@@ -92,13 +129,18 @@ export function Avatar({
 
 /** Deterministic accent color from a string, so avatars stay stable. */
 export function colorFor(seed: string): string {
-  const palette = [colors.teal, colors.coral, colors.gold, colors.mint, '#7C6FF0', '#F06FA8'];
+  const palette = [lightColors.teal, lightColors.coral, lightColors.gold, lightColors.mint, '#7C6FF0', '#F06FA8'];
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   btn: {
     backgroundColor: colors.coral,
     borderRadius: radius.lg,
@@ -123,4 +165,24 @@ const styles = StyleSheet.create({
   },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.white, fontWeight: '800' },
+  switcherWrap: { gap: space(1.5), marginBottom: space(4) },
+  switcherLabel: {
+    color: colors.inkSoft,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  switcher: { gap: space(2) },
+  crewChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space(3.5),
+    paddingVertical: space(2),
+  },
+  crewChipOn: { backgroundColor: colors.teal, borderColor: colors.teal },
+  crewChipText: { color: colors.inkSoft, fontSize: 13, fontWeight: '700' },
+  crewChipTextOn: { color: colors.white },
 });

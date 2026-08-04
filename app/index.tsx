@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { ensureProfile, getMyGroups } from '@/lib/db';
 import { Milo } from '@/components/Milo';
-import { colors, space } from '@/lib/theme';
+import { space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export default function Index() {
   const { user, loading } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [dest, setDest] = useState<'onboarding' | 'tabs' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ export default function Index() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   wrap: {
     flex: 1,
     alignItems: 'center',

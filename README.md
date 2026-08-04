@@ -10,7 +10,7 @@ droops the day it slips.
 
 A native **Expo / React Native** app (iOS + Android) on a **Supabase** backend.
 
-- **Today** — the daily check-in: pick an activity, snap a photo, one tap to log it.
+- **Today** — choose a crew, pick an activity, add an optional note/photo, and check in.
 - **Crew** — your friend group's week at a glance: who's in, streaks, a nudge for
   whoever's fallen behind, and your invite code to share.
 - **You** — your profile and crews.
@@ -21,7 +21,7 @@ no strangers.
 ## Stack
 
 - Expo SDK 57 · React Native 0.86 · TypeScript · expo-router
-- Supabase (Postgres + Auth + Storage)
+- Supabase (Postgres + Auth + Storage + Edge Functions)
 - react-native-svg (Milo) · expo-image-picker (photos)
 
 ## Quick start
@@ -47,11 +47,11 @@ app/                 expo-router screens
   (tabs)/you         profile
 components/           Milo mascot + UI kit
 lib/                  supabase client, auth, data layer, date helpers, theme
-supabase/migrations/ 0001 schema · 0002 storage + RPCs
+supabase/migrations/ 0001 schema · 0002 storage + RPCs · 0003 push tokens
+supabase/functions/  authenticated push-notification delivery
 ```
 
 ## Status
 
-Foundation: ✅ auth, crews, daily check-in with photo, streaks
-Next up: push notifications (daily reminder + nudges), Milo mood on the crew
-screen, a dark theme.
+Foundation: ✅ auth, multiple crews, notes/photos, streaks, real push nudges,
+and system light/dark themes.

@@ -1,7 +1,7 @@
 # Setup
 
-About 10 minutes. You need a free Supabase project and the **Expo Go** app on
-your phone (App Store / Play Store).
+You need a free Supabase project. The web app and most native features work in
+Expo Go; remote push nudges require a development build.
 
 ## 1. Create a Supabase project
 
@@ -12,14 +12,15 @@ your phone (App Store / Play Store).
 
 ## 2. Run the database migrations
 
-In the Supabase dashboard, open **SQL Editor** and run the two files in order:
+In the Supabase dashboard, open **SQL Editor** and run the three files in order:
 
 1. `supabase/migrations/0001_init.sql` — tables, RLS, and the streak function.
 2. `supabase/migrations/0002_storage_and_rpcs.sql` — the photo storage bucket
    and the `create_group` / `join_group_by_code` functions the app calls.
+3. `supabase/migrations/0003_push_notifications.sql` — device tokens, nudge
+   history/rate limiting, and secure token registration.
 
-Paste each file's contents, run it, then do the next. (Order matters — `0002`
-builds on `0001`.)
+Paste each file's contents, run it, then do the next. Order matters.
 
 ## 3. Turn off email confirmation (for now)
 
@@ -55,23 +56,47 @@ npm start
 Scan the QR code with **Expo Go** (iOS: the Camera app; Android: the Expo Go
 app). The app hot-reloads as the code changes.
 
+## 6. Enable real push nudges
+
+Push delivery needs an Expo/EAS project and the included Supabase Edge Function:
+
+```bash
+npx eas-cli init
+npx supabase functions deploy send-nudge
+```
+
+`eas init` writes `extra.eas.projectId` into `app.json`; the app uses that ID
+when requesting an Expo push token. Then configure iOS/Android push credentials
+and install a development build:
+
+```bash
+npx eas-cli build --profile development
+```
+
+The repo includes `expo-dev-client` and an `eas.json` development profile for
+this build.
+
+The Edge Function automatically receives `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` in the hosted Supabase environment. Nudge requests
+are authenticated, require both people to be in the crew, and are limited to
+one sender-to-recipient nudge per crew every six hours.
+
 ## Try the loop
 
 1. **Create an account** (name, email, password).
 2. **Create a crew** and pick a weekly goal.
-3. On **Today**, pick an activity, optionally snap a photo, and tap **I showed up**.
+3. On **Today**, choose the crew, pick an activity, optionally add a note/photo,
+   and tap **I showed up**.
 4. Check the **Crew** tab — your check-in shows up, and the invite code at the
    bottom is what you send friends so they can **Join** with it.
 
-## Notes & what's stubbed
+## Notes
 
-- **Nudge** currently shows a local confirmation only — real push notifications
-  (the daily reminder + nudges) are the next milestone and need
-  `expo-notifications` plus a device build or a dev client.
+- Remote notifications are unavailable on web and in Expo Go on Android. The
+  app only reports success after Expo accepts a real push delivery request.
 - Photos go to a **public** storage bucket (`check-ins`), namespaced per user.
   Fine for a friends app; revisit if the product opens up.
-- The app is **light-themed** for v1; a dark theme can layer onto the tokens in
-  `lib/theme.ts`.
+- The app follows the device/browser light or dark color scheme automatically.
 
 ## Troubleshooting
 

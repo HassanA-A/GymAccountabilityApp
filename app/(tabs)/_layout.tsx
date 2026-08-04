@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
 import Svg, { Circle, G, Path } from 'react-native-svg';
-import { colors } from '@/lib/theme';
+import { useTheme } from '@/lib/theme';
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
   return (
     <Tabs
       screenOptions={{

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,12 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth';
 import { Milo } from '@/components/Milo';
 import { GhostButton, PrimaryButton } from '@/components/ui';
-import { colors, radius, space } from '@/lib/theme';
+import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type Mode = 'in' | 'up';
 
 export default function SignIn() {
   const { signIn, signUp } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mode, setMode] = useState<Mode>('in');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -122,6 +124,8 @@ function Field({
   label,
   ...props
 }: { label: string } & React.ComponentProps<typeof TextInput>) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -134,7 +138,12 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: space(6), gap: space(6) },

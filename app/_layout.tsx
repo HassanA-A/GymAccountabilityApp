@@ -3,12 +3,15 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { colors } from '@/lib/theme';
+import { ActiveGroupProvider } from '@/lib/active-group';
+import { NotificationRegistrar } from '@/lib/notifications';
+import { ThemeProvider, useTheme } from '@/lib/theme';
 
 function Gate() {
   const { session, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     if (loading) return;
@@ -34,10 +37,25 @@ function Gate() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <StatusBar style="dark" />
-        <Gate />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ActiveGroupProvider>
+            <NotificationRegistrar>
+              <ThemedApp />
+            </NotificationRegistrar>
+          </ActiveGroupProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+function ThemedApp() {
+  const { isDark } = useTheme();
+  return (
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Gate />
+    </>
   );
 }
