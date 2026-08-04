@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Huddle",
+    "slug": "huddle",
+    "scheme": "huddle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E7F6F4"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.huddle.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Huddle uses your camera so you can snap a photo when you check in.",
+        "NSPhotoLibraryUsageDescription": "Huddle lets you attach a photo from your library to a check-in."
+      }
+    },
+    "android": {
+      "package": "com.huddle.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E7F6F4",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Huddle lets you attach a photo from your library to a check-in.",
+          "cameraPermission": "Huddle uses your camera so you can snap a photo when you check in."
+        }
+      ]
+    ]
+  }
+}
