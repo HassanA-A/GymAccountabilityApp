@@ -35,6 +35,16 @@ export function weekDates(weekStartDow: number, ref = new Date()): string[] {
   });
 }
 
+/** "Today" / "Yesterday" / "Mon, Aug 4" for a YYYY-MM-DD local date. */
+export function relativeDayLabel(localDate: string): string {
+  if (localDate === todayLocal()) return 'Today';
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  if (localDate === toLocalDate(y)) return 'Yesterday';
+  const d = new Date(`${localDate}T00:00:00`);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 /** Single-letter labels for the week, aligned to week_start_dow. */
 export function weekDayLabels(weekStartDow: number): string[] {
   const base = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];

@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
@@ -132,17 +133,45 @@ export async function getTodayStatus(
   return { inCount, total: total ?? 0 };
 }
 
-async function uploadPhoto(userId: string, groupId: string, uri: string): Promise<string> {
-  const ext = (uri.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
-  const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
-  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-  const path = `${userId}/${groupId}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage
-    .from('check-ins')
-    .upload(path, decode(base64), { contentType, upsert: false });
+/**
+ * Upload an image to a bucket and return its public URL. Handles both web
+ * (fetch -> Blob) and native (expo-file-system -> base64 -> ArrayBuffer),
+ * since expo-file-system's readAsStringAsync doesn't work on web.
+ * keyPrefix should start with the user's id folder so storage RLS passes.
+ */
+async function uploadImage(bucket: string, keyPrefix: string, uri: string): Promise<string> {
+  let body: Blob | ArrayBuffer;
+  let contentType: string;
+
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(uri)).blob();
+    body = blob;
+    contentType = blob.type || 'image/jpeg';
+  } else {
+    const ext = (uri.split('.').pop() || 'jpg').toLowerCase().split('?')[0];
+    contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+    body = decode(base64);
+  }
+
+  const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+  const path = `${keyPrefix}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, body, {
+    contentType,
+    upsert: true,
+  });
   if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from('check-ins').getPublicUrl(path);
-  return data.publicUrl;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+/** Upload/replace the signed-in user's avatar and save it on their profile. */
+export async function updateAvatar(userId: string, uri: string): Promise<string> {
+  // Reuses the existing public "check-ins" bucket (folder = user id), so no
+  // extra Supabase setup is needed — its RLS policies already cover this path.
+  const url = await uploadImage('check-ins', `${userId}/avatar`, uri);
+  const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', userId);
+  if (error) throw new Error(error.message);
+  return url;
 }
 
 export async function createCheckIn(opts: {
@@ -154,7 +183,7 @@ export async function createCheckIn(opts: {
 }): Promise<CheckIn> {
   let photo_url: string | null = null;
   if (opts.photoUri) {
-    photo_url = await uploadPhoto(opts.userId, opts.groupId, opts.photoUri);
+    photo_url = await uploadImage('check-ins', `${opts.userId}/${opts.groupId}/checkin`, opts.photoUri);
   }
   const { data, error } = await supabase
     .from('check_ins')
@@ -226,4 +255,39 @@ export async function getCrew(group: Group, myUserId: string): Promise<CrewView>
     targetHit,
     targetTotal: members.length * group.target_days_per_week,
   };
+}
+
+export type FeedItem = {
+  id: string;
+  user_id: string;
+  local_date: string;
+  activity: Activity;
+  note: string | null;
+  photo_url: string | null;
+  created_at: string;
+  author: { id: string; display_name: string; avatar_url: string | null };
+};
+
+/** The crew's recent check-ins, newest first — the daily feed. */
+export async function getFeed(groupId: string, limit = 80): Promise<FeedItem[]> {
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select(
+      'id, user_id, local_date, activity, note, photo_url, created_at, profiles(id, display_name, avatar_url)'
+    )
+    .eq('group_id', groupId)
+    .order('local_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []).map((r: any) => ({
+    id: r.id,
+    user_id: r.user_id,
+    local_date: r.local_date,
+    activity: r.activity,
+    note: r.note,
+    photo_url: r.photo_url,
+    created_at: r.created_at,
+    author: r.profiles,
+  })) as FeedItem[]).filter((f) => f.author);
 }
