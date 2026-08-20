@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Share,
@@ -22,6 +21,7 @@ import {
   type FeedItem,
 } from '@/lib/db';
 import { relativeDayLabel, weekDayLabels } from '@/lib/date';
+import { notify } from '@/lib/dialogs';
 import { Avatar, Card, colorFor } from '@/components/ui';
 import { colors, radius, space } from '@/lib/theme';
 
@@ -226,7 +226,7 @@ function MemberRow({
       {behind ? (
         <Pressable
           onPress={() =>
-            Alert.alert('Nudge sent 👋', `${member.profile.display_name} will get a friendly reminder.`)
+            notify('Nudge sent 👋', `${member.profile.display_name} will get a friendly reminder.`)
           }
           style={styles.nudge}
         >

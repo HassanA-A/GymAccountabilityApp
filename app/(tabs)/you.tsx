@@ -17,6 +17,7 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
 import { Card, GhostButton, colorFor } from '@/components/ui';
+import { notify } from '@/lib/dialogs';
 import { colors, radius, space } from '@/lib/theme';
 
 export default function You() {
@@ -51,7 +52,7 @@ export default function You() {
       const url = await updateAvatar(user.id, uri);
       setProfile((p) => (p ? { ...p, avatar_url: url } : p));
     } catch (e) {
-      Alert.alert('Could not update photo', e instanceof Error ? e.message : 'Please try again.');
+      notify('Could not update photo', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setUploading(false);
     }

@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,6 +25,7 @@ import {
 } from '@/lib/db';
 import { Milo } from '@/components/Milo';
 import { Card, PrimaryButton } from '@/components/ui';
+import { confirmAction, notify } from '@/lib/dialogs';
 import { colors, radius, space } from '@/lib/theme';
 
 const ACTIVITIES: { key: Activity; label: string }[] = [
@@ -75,7 +75,7 @@ export default function Today() {
   async function takePhoto() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Camera access needed', 'Turn on camera access in Settings to snap a check-in photo.');
+      notify('Camera access needed', 'Turn on camera access in Settings to snap a check-in photo.');
       return;
     }
     const res = await ImagePicker.launchCameraAsync({ quality: 0.6, allowsEditing: true, aspect: [4, 5] });
@@ -102,26 +102,25 @@ export default function Today() {
       const st = await getTodayStatus(group.id);
       setStatus(st);
     } catch (e) {
-      Alert.alert('Could not check in', e instanceof Error ? e.message : 'Please try again.');
+      notify('Could not check in', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  function confirmUndo() {
+  async function confirmUndo() {
     if (!checkIn) return;
-    Alert.alert('Undo check-in?', 'This removes today’s check-in.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Undo',
-        style: 'destructive',
-        onPress: async () => {
-          await undoTodayCheckIn(checkIn.id);
-          setCheckIn(null);
-          if (group) setStatus(await getTodayStatus(group.id));
-        },
-      },
-    ]);
+    const ok = await confirmAction({
+      title: 'Undo check-in?',
+      message: 'This removes today’s check-in.',
+      confirmText: 'Undo',
+      cancelText: 'Keep it',
+      destructive: true,
+    });
+    if (!ok) return;
+    await undoTodayCheckIn(checkIn.id);
+    setCheckIn(null);
+    if (group) setStatus(await getTodayStatus(group.id));
   }
 
   if (loading) {
