@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/db';
 import { Milo } from '@/components/Milo';
 import { Card, CrewSwitcher, PrimaryButton } from '@/components/ui';
+import { success, select, tap } from '@/lib/haptics';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 const ACTIVITIES: { key: Activity; label: string }[] = [
@@ -50,10 +52,26 @@ export default function Today() {
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
   }, [refreshGroups]));
+
+  const onRefresh = useCallback(async () => {
+    if (!user || !group) return;
+    setRefreshing(true);
+    try {
+      await refreshGroups();
+      const [ci, st] = await Promise.all([getTodayCheckIn(group.id, user.id), getTodayStatus(group.id)]);
+      setCheckIn(ci);
+      setStatus(st);
+    } catch {
+      // A pull-to-refresh failing silently is fine; the next load will retry.
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, group, refreshGroups]);
 
   useEffect(() => {
     setActivity('gym');
@@ -108,6 +126,7 @@ export default function Today() {
 
   async function submit() {
     if (!group || !user) return;
+    tap();
     setSubmitting(true);
     try {
       const ci = await createCheckIn({
@@ -117,6 +136,7 @@ export default function Today() {
         note,
         photoUri: photo,
       });
+      success();
       setCheckIn(ci);
       setPhoto(null);
       setNote('');
@@ -139,6 +159,7 @@ export default function Today() {
     });
     if (!shouldUndo) return;
     try {
+      tap();
       await undoTodayCheckIn(checkIn.id);
       setCheckIn(null);
       if (group) setStatus(await getTodayStatus(group.id));
@@ -159,7 +180,13 @@ export default function Today() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.coral} colors={[colors.coral]} />
+        }
+      >
         <Text style={styles.title}>Today</Text>
         <Text style={styles.date}>{PRETTY_DATE()}</Text>
         <CrewSwitcher />
@@ -189,7 +216,10 @@ export default function Today() {
               {ACTIVITIES.map((item) => (
                 <Pressable
                   key={item.key}
-                  onPress={() => setActivity(item.key)}
+                  onPress={() => {
+                    select();
+                    setActivity(item.key);
+                  }}
                   style={[styles.chip, activity === item.key && styles.chipOn]}
                 >
                   <Text style={[styles.chipText, activity === item.key && styles.chipTextOn]}>{item.label}</Text>

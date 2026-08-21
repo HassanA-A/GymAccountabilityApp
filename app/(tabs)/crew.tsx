@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -23,6 +24,7 @@ import {
   type FeedItem,
 } from '@/lib/db';
 import { relativeDayLabel, weekDayLabels } from '@/lib/date';
+import { select, tap } from '@/lib/haptics';
 import { Avatar, Card, colorFor, CrewSwitcher } from '@/components/ui';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
@@ -40,10 +42,26 @@ export default function Crew() {
   const [view, setView] = useState<View2>('week');
   const [loading, setLoading] = useState(true);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
   }, [refreshGroups]));
+
+  const onRefresh = useCallback(async () => {
+    if (!user || !activeGroup) return;
+    setRefreshing(true);
+    try {
+      await refreshGroups();
+      const [nextCrew, nextFeed] = await Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id)]);
+      setCrew(nextCrew);
+      setFeed(nextFeed);
+    } catch {
+      // Silent — the pull just won't update; next focus reload will retry.
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, activeGroup, refreshGroups]);
 
   useEffect(() => {
     if (!user || groupsLoading) return;
@@ -78,6 +96,7 @@ export default function Crew() {
     });
     if (!confirmed) return;
 
+    tap();
     setNudgingId(member.profile.id);
     try {
       const result = await sendNudge(crew.group.id, member.profile.id);
@@ -125,7 +144,12 @@ export default function Crew() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.coral} colors={[colors.coral]} />
+        }
+      >
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>{crew.group.name}</Text>
@@ -138,8 +162,8 @@ export default function Crew() {
         <CrewSwitcher />
 
         <View style={styles.segment}>
-          <Seg label="This week" active={view === 'week'} onPress={() => setView('week')} />
-          <Seg label="Feed" active={view === 'feed'} onPress={() => setView('feed')} />
+          <Seg label="This week" active={view === 'week'} onPress={() => { select(); setView('week'); }} />
+          <Seg label="Feed" active={view === 'feed'} onPress={() => { select(); setView('feed'); }} />
         </View>
 
         {view === 'week' ? (
