@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -16,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { choosePhotoSource, showMessage } from '@/lib/dialog';
 import { getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
+import { applyReminder, getReminder, REMINDER_TIMES, type Reminder } from '@/lib/reminders';
 import { Card, GhostButton, colorFor } from '@/components/ui';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
@@ -26,6 +29,7 @@ export default function You() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [reminder, setReminder] = useState<Reminder>({ enabled: false, hour: 18 });
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
@@ -33,13 +37,26 @@ export default function You() {
     if (!user) return;
     setLoading(true);
     try {
-      const [p, g] = await Promise.all([getMyProfile(user.id), getMyGroups()]);
+      const [p, g, r] = await Promise.all([getMyProfile(user.id), getMyGroups(), getReminder()]);
       setProfile(p);
       setGroups(g);
+      setReminder(r);
     } finally {
       setLoading(false);
     }
   }, [user]);
+
+  async function toggleReminder(value: boolean) {
+    const applied = await applyReminder({ ...reminder, enabled: value });
+    setReminder(applied);
+    if (value && !applied.enabled) {
+      showMessage('Notifications are off', 'Enable notifications for Huddle in your settings to get reminders.');
+    }
+  }
+
+  async function pickReminderTime(hour: number) {
+    setReminder(await applyReminder({ ...reminder, hour }));
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -157,6 +174,38 @@ export default function You() {
           )}
         </Card>
 
+        <View style={{ height: space(4) }} />
+        <Card style={{ gap: space(3) }}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Daily reminder</Text>
+            <Switch
+              value={reminder.enabled}
+              onValueChange={toggleReminder}
+              trackColor={{ true: colors.coral, false: colors.line }}
+              thumbColor={colors.white}
+            />
+          </View>
+          <Text style={styles.muted}>A gentle nudge to check in if you haven’t yet.</Text>
+          {reminder.enabled && (
+            <View style={styles.timeRow}>
+              {REMINDER_TIMES.map((t) => (
+                <Pressable
+                  key={t.hour}
+                  onPress={() => pickReminderTime(t.hour)}
+                  style={[styles.timeChip, reminder.hour === t.hour && styles.timeChipOn]}
+                >
+                  <Text style={[styles.timeChipText, reminder.hour === t.hour && styles.timeChipTextOn]}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {Platform.OS === 'web' && (
+            <Text style={styles.webNote}>Reminders fire in the installed app, not the web version.</Text>
+          )}
+        </Card>
+
         <View style={{ height: space(6) }} />
         <GhostButton label="Sign out" onPress={signOut} />
       </ScrollView>
@@ -213,4 +262,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: space(1.5),
   },
   codePillText: { fontSize: 13, fontWeight: '800', color: colors.ink, letterSpacing: 2 },
+  timeRow: { flexDirection: 'row', gap: space(2), flexWrap: 'wrap' },
+  timeChip: {
+    paddingHorizontal: space(3.5),
+    paddingVertical: space(2),
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.surface2,
+  },
+  timeChipOn: { backgroundColor: colors.coral, borderColor: colors.coral },
+  timeChipText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
+  timeChipTextOn: { color: colors.white },
+  webNote: { fontSize: 12, color: colors.inkFaint, fontStyle: 'italic' },
 });
