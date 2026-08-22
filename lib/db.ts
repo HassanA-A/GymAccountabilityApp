@@ -135,6 +135,31 @@ export async function getTodayStatus(
   return { inCount, total: total ?? 0 };
 }
 
+export type WeekStatus = {
+  streak: number;
+  daysThisWeek: number;
+  target: number;
+  daysLeftInWeek: number; // remaining days in the week, including today
+};
+
+/** The signed-in user's progress this week in one group — powers Milo's mood. */
+export async function getMyWeekStatus(group: Group, userId: string): Promise<WeekStatus> {
+  const week = weekDates(group.week_start_dow);
+  const [{ data: rows }, streak] = await Promise.all([
+    supabase
+      .from('check_ins')
+      .select('local_date')
+      .eq('group_id', group.id)
+      .eq('user_id', userId)
+      .gte('local_date', week[0]),
+    getStreak(userId, group.id),
+  ]);
+  const daysThisWeek = new Set((rows ?? []).map((r: any) => r.local_date)).size;
+  const idx = week.indexOf(todayLocal());
+  const daysLeftInWeek = idx >= 0 ? 7 - idx : 7;
+  return { streak, daysThisWeek, target: group.target_days_per_week, daysLeftInWeek };
+}
+
 /**
  * Upload an image to a bucket and return its public URL. Handles both web
  * (fetch -> Blob) and native (expo-file-system -> base64 -> ArrayBuffer),

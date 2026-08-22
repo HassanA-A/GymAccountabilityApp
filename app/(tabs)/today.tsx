@@ -19,13 +19,15 @@ import { useActiveGroup } from '@/lib/active-group';
 import { confirmAction, showMessage } from '@/lib/dialog';
 import {
   createCheckIn,
+  getMyWeekStatus,
   getTodayCheckIn,
   getTodayStatus,
   undoTodayCheckIn,
   type Activity,
   type CheckIn,
+  type WeekStatus,
 } from '@/lib/db';
-import { Milo } from '@/components/Milo';
+import { Milo, type Mood } from '@/components/Milo';
 import { Card, CrewSwitcher, PrimaryButton } from '@/components/ui';
 import { success, select, tap } from '@/lib/haptics';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
@@ -40,6 +42,30 @@ const ACTIVITIES: { key: Activity; label: string }[] = [
 const PRETTY_DATE = () =>
   new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
+/** Milo's face + a one-liner, driven by how your week is going. */
+function miloState(done: boolean, w: WeekStatus | null): { mood: Mood; line: string | null } {
+  if (done) {
+    const streak = w?.streak ?? 0;
+    return { mood: 'pumped', line: streak > 0 ? `🔥 ${streak} week streak` : 'Milo’s proud of you.' };
+  }
+  if (!w) return { mood: 'happy', line: null };
+  const needed = Math.max(0, w.target - w.daysThisWeek);
+  if (needed === 0) return { mood: 'sleepy', line: 'Weekly goal done — rest easy. 😌' };
+  if (needed >= w.daysLeftInWeek) {
+    return {
+      mood: 'worried',
+      line:
+        w.streak > 0
+          ? `Don’t break your ${w.streak}-week streak — check in today.`
+          : 'Cutting it close — check in today.',
+    };
+  }
+  return {
+    mood: 'happy',
+    line: w.streak > 0 ? `🔥 ${w.streak} week streak — keep it alive.` : 'You’re on track this week.',
+  };
+}
+
 export default function Today() {
   const { user } = useAuth();
   const { activeGroup: group, loading: groupsLoading, refreshGroups } = useActiveGroup();
@@ -47,6 +73,7 @@ export default function Today() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [checkIn, setCheckIn] = useState<CheckIn | null>(null);
   const [status, setStatus] = useState({ inCount: 0, total: 0 });
+  const [week, setWeek] = useState<WeekStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<Activity>('gym');
   const [note, setNote] = useState('');
@@ -63,9 +90,14 @@ export default function Today() {
     setRefreshing(true);
     try {
       await refreshGroups();
-      const [ci, st] = await Promise.all([getTodayCheckIn(group.id, user.id), getTodayStatus(group.id)]);
+      const [ci, st, wk] = await Promise.all([
+        getTodayCheckIn(group.id, user.id),
+        getTodayStatus(group.id),
+        getMyWeekStatus(group, user.id),
+      ]);
       setCheckIn(ci);
       setStatus(st);
+      setWeek(wk);
     } catch {
       // A pull-to-refresh failing silently is fine; the next load will retry.
     } finally {
@@ -91,11 +123,16 @@ export default function Today() {
     let current = true;
     setLoading(true);
     setCheckIn(null);
-    Promise.all([getTodayCheckIn(group.id, user.id), getTodayStatus(group.id)])
-      .then(([ci, st]) => {
+    Promise.all([
+      getTodayCheckIn(group.id, user.id),
+      getTodayStatus(group.id),
+      getMyWeekStatus(group, user.id),
+    ])
+      .then(([ci, st, wk]) => {
         if (!current) return;
         setCheckIn(ci);
         setStatus(st);
+        setWeek(wk);
       })
       .catch((error) => {
         if (current) showMessage('Could not load today', error instanceof Error ? error.message : 'Please try again.');
@@ -141,6 +178,7 @@ export default function Today() {
       setPhoto(null);
       setNote('');
       setStatus(await getTodayStatus(group.id));
+      setWeek(await getMyWeekStatus(group, user.id));
     } catch (error) {
       showMessage('Could not check in', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -162,7 +200,10 @@ export default function Today() {
       tap();
       await undoTodayCheckIn(checkIn.id);
       setCheckIn(null);
-      if (group) setStatus(await getTodayStatus(group.id));
+      if (group) {
+        setStatus(await getTodayStatus(group.id));
+        if (user) setWeek(await getMyWeekStatus(group, user.id));
+      }
     } catch (error) {
       showMessage('Could not undo', error instanceof Error ? error.message : 'Please try again.');
     }
@@ -177,6 +218,7 @@ export default function Today() {
   }
 
   const done = !!checkIn;
+  const milo = miloState(done, week);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -192,7 +234,8 @@ export default function Today() {
         <CrewSwitcher />
 
         <View style={styles.miloWrap}>
-          <Milo mood={done ? 'pumped' : 'happy'} size={168} />
+          <Milo mood={milo.mood} size={168} />
+          {milo.line ? <Text style={styles.miloLine}>{milo.line}</Text> : null}
         </View>
 
         {done ? (
@@ -305,7 +348,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { padding: space(6), paddingBottom: space(10), gap: space(1) },
   title: { fontSize: 30, fontWeight: '800', color: colors.ink },
   date: { fontSize: 14, color: colors.inkSoft, fontWeight: '600', marginBottom: space(2) },
-  miloWrap: { alignItems: 'center', marginVertical: space(2) },
+  miloWrap: { alignItems: 'center', marginVertical: space(2), gap: space(1) },
+  miloLine: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.inkSoft,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
   prompt: { fontSize: 19, fontWeight: '800', color: colors.ink, textAlign: 'center' },
   checkingInto: { fontSize: 12, color: colors.teal, fontWeight: '700', textAlign: 'center', marginBottom: space(4) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space(2), justifyContent: 'center' },
