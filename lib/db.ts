@@ -52,7 +52,8 @@ export type CrewView = {
 export async function ensureProfile(
   userId: string,
   displayName: string,
-  username: string
+  username: string,
+  avatarUrl?: string | null
 ): Promise<void> {
   const { data } = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
   if (data) return;
@@ -62,6 +63,7 @@ export async function ensureProfile(
     id: userId,
     display_name: displayName.trim() || 'Friend',
     username: username.trim().toLowerCase(),
+    avatar_url: avatarUrl || null,
     timezone: tz,
   });
   if (error) throw new Error(error.message);
@@ -279,6 +281,14 @@ export async function getCrew(group: Group, myUserId: string): Promise<CrewView>
   };
 }
 
+export const REACTION_EMOJIS = ['🔥', '💪', '👏', '🎉'] as const;
+export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
+export type ReactionSummary = {
+  counts: Record<string, number>; // emoji -> how many people reacted with it
+  mine: string[]; // emojis the current user has added
+};
+
 export type FeedItem = {
   id: string;
   user_id: string;
@@ -288,10 +298,11 @@ export type FeedItem = {
   photo_url: string | null;
   created_at: string;
   author: { id: string; display_name: string; avatar_url: string | null };
+  reactions: ReactionSummary;
 };
 
-/** The crew's recent check-ins, newest first — the daily feed. */
-export async function getFeed(groupId: string, limit = 80): Promise<FeedItem[]> {
+/** The crew's recent check-ins, newest first — the daily feed, with reactions. */
+export async function getFeed(groupId: string, myUserId: string, limit = 80): Promise<FeedItem[]> {
   const { data, error } = await supabase
     .from('check_ins')
     .select(
@@ -302,14 +313,60 @@ export async function getFeed(groupId: string, limit = 80): Promise<FeedItem[]> 
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
-  return ((data ?? []).map((r: any) => ({
-    id: r.id,
-    user_id: r.user_id,
-    local_date: r.local_date,
-    activity: r.activity,
-    note: r.note,
-    photo_url: r.photo_url,
-    created_at: r.created_at,
-    author: r.profiles,
-  })) as FeedItem[]).filter((f) => f.author);
+
+  const base = (data ?? [])
+    .map((r: any) => ({
+      id: r.id as string,
+      user_id: r.user_id as string,
+      local_date: r.local_date as string,
+      activity: r.activity as Activity,
+      note: r.note as string | null,
+      photo_url: r.photo_url as string | null,
+      created_at: r.created_at as string,
+      author: r.profiles as FeedItem['author'],
+    }))
+    .filter((f) => f.author);
+
+  const summaries = new Map<string, ReactionSummary>();
+  const ids = base.map((f) => f.id);
+  if (ids.length) {
+    const { data: rx } = await supabase
+      .from('check_in_reactions')
+      .select('check_in_id, emoji, user_id')
+      .in('check_in_id', ids);
+    for (const r of (rx ?? []) as { check_in_id: string; emoji: string; user_id: string }[]) {
+      let s = summaries.get(r.check_in_id);
+      if (!s) {
+        s = { counts: {}, mine: [] };
+        summaries.set(r.check_in_id, s);
+      }
+      s.counts[r.emoji] = (s.counts[r.emoji] ?? 0) + 1;
+      if (r.user_id === myUserId) s.mine.push(r.emoji);
+    }
+  }
+
+  return base.map((f) => ({ ...f, reactions: summaries.get(f.id) ?? { counts: {}, mine: [] } }));
+}
+
+/** Add or remove one of your reactions on a check-in. */
+export async function toggleReaction(
+  checkInId: string,
+  userId: string,
+  emoji: string,
+  currentlyMine: boolean
+): Promise<void> {
+  if (currentlyMine) {
+    const { error } = await supabase
+      .from('check_in_reactions')
+      .delete()
+      .eq('check_in_id', checkInId)
+      .eq('user_id', userId)
+      .eq('emoji', emoji);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from('check_in_reactions')
+      .insert({ check_in_id: checkInId, user_id: userId, emoji });
+    if (error) throw new Error(error.message);
+  }
 }

@@ -19,9 +19,12 @@ import {
   getCrew,
   getFeed,
   sendNudge,
+  toggleReaction,
+  REACTION_EMOJIS,
   type CrewMember,
   type CrewView,
   type FeedItem,
+  type ReactionSummary,
 } from '@/lib/db';
 import { relativeDayLabel, weekDayLabels } from '@/lib/date';
 import { select, tap } from '@/lib/haptics';
@@ -53,7 +56,7 @@ export default function Crew() {
     setRefreshing(true);
     try {
       await refreshGroups();
-      const [nextCrew, nextFeed] = await Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id)]);
+      const [nextCrew, nextFeed] = await Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id, user.id)]);
       setCrew(nextCrew);
       setFeed(nextFeed);
     } catch {
@@ -74,7 +77,7 @@ export default function Crew() {
     let current = true;
     setLoading(true);
     setCrew(null);
-    Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id)])
+    Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id, user.id)])
       .then(([nextCrew, nextFeed]) => {
         if (!current) return;
         setCrew(nextCrew);
@@ -113,6 +116,24 @@ export default function Crew() {
       showMessage('Could not send nudge', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setNudgingId(null);
+    }
+  }
+
+  async function onToggleReaction(item: FeedItem, emoji: string) {
+    if (!user) return;
+    const wasMine = item.reactions.mine.includes(emoji);
+    const snapshot = item.reactions;
+    select();
+    // Optimistic: update the count/highlight instantly, before the server call.
+    setFeed((prev) =>
+      prev.map((f) => (f.id === item.id ? { ...f, reactions: applyToggle(f.reactions, emoji, wasMine) } : f))
+    );
+    try {
+      await toggleReaction(item.id, user.id, emoji, wasMine);
+    } catch (error) {
+      // Roll back to the pre-tap state.
+      setFeed((prev) => prev.map((f) => (f.id === item.id ? { ...f, reactions: snapshot } : f)));
+      showMessage('Could not react', error instanceof Error ? error.message : 'Please try again.');
     }
   }
 
@@ -201,14 +222,22 @@ export default function Crew() {
             </Pressable>
           </>
         ) : (
-          <Feed feed={feed} />
+          <Feed feed={feed} onToggle={onToggleReaction} />
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Feed({ feed }: { feed: FeedItem[] }) {
+function applyToggle(summary: ReactionSummary, emoji: string, wasMine: boolean): ReactionSummary {
+  const counts = { ...summary.counts };
+  counts[emoji] = (counts[emoji] ?? 0) + (wasMine ? -1 : 1);
+  if (counts[emoji] <= 0) delete counts[emoji];
+  const mine = wasMine ? summary.mine.filter((e) => e !== emoji) : [...summary.mine, emoji];
+  return { counts, mine };
+}
+
+function Feed({ feed, onToggle }: { feed: FeedItem[]; onToggle: (item: FeedItem, emoji: string) => void }) {
   const styles = useStyles();
   if (feed.length === 0) {
     return (
@@ -228,7 +257,7 @@ function Feed({ feed }: { feed: FeedItem[] }) {
         return (
           <View key={item.id}>
             {showDay && <Text style={styles.dayHeader}>{relativeDayLabel(item.local_date)}</Text>}
-            <FeedCard item={item} />
+            <FeedCard item={item} onToggle={onToggle} />
           </View>
         );
       })}
@@ -236,7 +265,7 @@ function Feed({ feed }: { feed: FeedItem[] }) {
   );
 }
 
-function FeedCard({ item }: { item: FeedItem }) {
+function FeedCard({ item, onToggle }: { item: FeedItem; onToggle: (item: FeedItem, emoji: string) => void }) {
   const styles = useStyles();
   const time = new Date(item.created_at).toLocaleTimeString(undefined, {
     hour: 'numeric',
@@ -257,6 +286,24 @@ function FeedCard({ item }: { item: FeedItem }) {
       {item.photo_url ? (
         <Image source={{ uri: item.photo_url }} style={styles.feedPhoto} contentFit="cover" />
       ) : null}
+      <View style={styles.reactionRow}>
+        {REACTION_EMOJIS.map((emoji) => {
+          const count = item.reactions.counts[emoji] ?? 0;
+          const mine = item.reactions.mine.includes(emoji);
+          return (
+            <Pressable
+              key={emoji}
+              onPress={() => onToggle(item, emoji)}
+              style={({ pressed }) => [styles.reaction, mine && styles.reactionOn, pressed && { opacity: 0.6 }]}
+            >
+              <Text style={styles.reactionEmoji}>{emoji}</Text>
+              {count > 0 ? (
+                <Text style={[styles.reactionCount, mine && styles.reactionCountOn]}>{count}</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -411,6 +458,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   feedMeta: { fontSize: 12.5, color: colors.inkSoft, fontWeight: '600', marginTop: 1 },
   feedNote: { fontSize: 14, color: colors.ink, lineHeight: 20 },
   feedPhoto: { width: '100%', height: 300, borderRadius: radius.md, backgroundColor: colors.surface2 },
+  reactionRow: { flexDirection: 'row', gap: space(2), flexWrap: 'wrap', marginTop: space(0.5) },
+  reaction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(1),
+    paddingHorizontal: space(2.5),
+    paddingVertical: space(1.5),
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.surface2,
+  },
+  reactionOn: { borderColor: colors.coral, backgroundColor: 'rgba(255,106,61,0.14)' },
+  reactionEmoji: { fontSize: 15 },
+  reactionCount: { fontSize: 13, fontWeight: '800', color: colors.inkSoft },
+  reactionCountOn: { color: colors.coral },
   feedEmpty: { alignItems: 'center', paddingVertical: space(12), gap: space(2) },
   feedEmptyText: { fontSize: 16, fontWeight: '800', color: colors.ink },
   feedEmptySub: { fontSize: 13, color: colors.inkSoft, textAlign: 'center', maxWidth: 240 },

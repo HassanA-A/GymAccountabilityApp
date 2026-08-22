@@ -18,17 +18,24 @@ export default function Index() {
     let cancelled = false;
     (async () => {
       try {
+        // Google fills user_metadata with name/full_name + avatar_url/picture;
+        // email/password sign-up sets display_name. Fall back to the email.
+        const meta = user.user_metadata ?? {};
         const displayName =
-          (user.user_metadata?.display_name as string) ||
+          (meta.display_name as string) ||
+          (meta.full_name as string) ||
+          (meta.name as string) ||
           user.email?.split('@')[0] ||
           'Friend';
+        const avatarUrl =
+          (meta.avatar_url as string) || (meta.picture as string) || null;
         const base =
           (user.email?.split('@')[0] ?? 'friend')
             .toLowerCase()
             .replace(/[^a-z0-9]/g, '')
             .slice(0, 16) || 'friend';
         const username = `${base}${Math.floor(1000 + Math.random() * 9000)}`.slice(0, 24);
-        await ensureProfile(user.id, displayName, username);
+        await ensureProfile(user.id, displayName, username, avatarUrl);
         const groups = await getMyGroups();
         if (!cancelled) setDest(groups.length ? 'tabs' : 'onboarding');
       } catch (e) {
