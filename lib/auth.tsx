@@ -1,4 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
@@ -12,6 +15,7 @@ type AuthValue = {
     password: string,
     displayName: string
   ) => Promise<{ error: string | null; needsConfirm: boolean }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 };
 
@@ -52,6 +56,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // If confirmations are on, there's a user but no session yet.
       const needsConfirm = !error && !data.session && !!data.user;
       return { error: error?.message ?? null, needsConfirm };
+    },
+    async signInWithGoogle() {
+      try {
+        if (Platform.OS === 'web') {
+          // Full-page redirect to Google, then back to our origin. The session
+          // in the return URL is parsed automatically (detectSessionInUrl).
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.origin },
+          });
+          return { error: error?.message ?? null };
+        }
+
+        // Native: open Google in a secure in-app browser and hand the result
+        // back to the app via the huddle:// deep link.
+        const redirectTo = Linking.createURL('/');
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo, skipBrowserRedirect: true },
+        });
+        if (error) return { error: error.message };
+        if (!data?.url) return { error: 'Could not start Google sign-in.' };
+
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        if (result.type !== 'success') return { error: null }; // user dismissed
+
+        const code = new URL(result.url).searchParams.get('code');
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          return { error: exchangeError?.message ?? null };
+        }
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Google sign-in failed.' };
+      }
     },
     async signOut() {
       await supabase.auth.signOut();
