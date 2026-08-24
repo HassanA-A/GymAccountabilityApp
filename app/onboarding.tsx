@@ -51,7 +51,9 @@ export default function Onboarding() {
       }
       await refreshGroups();
       await setActiveGroup(addedGroup);
-      router.replace('/(tabs)/today');
+      // After creating a crew, nudge them to invite friends; joining goes
+      // straight into the app.
+      router.replace(tab === 'create' ? '/invite' : '/(tabs)/today');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {

@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
-import { ensureProfile, getMyGroups } from '@/lib/db';
+import { useActiveGroup } from '@/lib/active-group';
+import { ensureProfile, getMyGroups, joinGroupByCode } from '@/lib/db';
+import { takePendingJoin } from '@/lib/pending-join';
 import { Milo } from '@/components/Milo';
 import { space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export default function Index() {
   const { user, loading } = useAuth();
+  const { setActiveGroup, refreshGroups } = useActiveGroup();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [dest, setDest] = useState<'onboarding' | 'tabs' | null>(null);
@@ -36,6 +39,21 @@ export default function Index() {
             .slice(0, 16) || 'friend';
         const username = `${base}${Math.floor(1000 + Math.random() * 9000)}`.slice(0, 24);
         await ensureProfile(user.id, displayName, username, avatarUrl);
+
+        // Redeem a pending invite link (/join/CODE) opened before signing in.
+        const pending = await takePendingJoin();
+        if (pending) {
+          try {
+            const joined = await joinGroupByCode(pending);
+            await refreshGroups();
+            await setActiveGroup(joined);
+            if (!cancelled) setDest('tabs');
+            return;
+          } catch {
+            // Invalid or expired code — fall through to normal routing.
+          }
+        }
+
         const groups = await getMyGroups();
         if (!cancelled) setDest(groups.length ? 'tabs' : 'onboarding');
       } catch (e) {

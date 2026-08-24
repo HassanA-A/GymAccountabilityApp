@@ -27,6 +27,7 @@ import {
   type ReactionSummary,
 } from '@/lib/db';
 import { relativeDayLabel, weekDayLabels } from '@/lib/date';
+import { inviteLink } from '@/lib/pending-join';
 import { select, tap } from '@/lib/haptics';
 import { Avatar, Card, colorFor, CrewSwitcher } from '@/components/ui';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
@@ -140,7 +141,7 @@ export default function Crew() {
   async function shareCode() {
     if (!crew) return;
     await Share.share({
-      message: `Join my crew "${crew.group.name}" on Huddle — invite code ${crew.group.invite_code}`,
+      message: `Join my crew "${crew.group.name}" on Huddle 🦆\n${inviteLink(crew.group.invite_code)}`,
     });
   }
 
