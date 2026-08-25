@@ -69,6 +69,32 @@ export async function ensureProfile(
   if (error) throw new Error(error.message);
 }
 
+/** Update the signed-in user's display name and/or username. */
+export async function updateProfile(
+  userId: string,
+  fields: { display_name?: string; username?: string }
+): Promise<void> {
+  const patch: Record<string, string> = {};
+  if (fields.display_name !== undefined) patch.display_name = fields.display_name.trim();
+  if (fields.username !== undefined) patch.username = fields.username.trim().toLowerCase();
+  const { error } = await supabase.from('profiles').update(patch).eq('id', userId);
+  if (error) {
+    if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+      throw new Error('That username is already taken.');
+    }
+    if (error.code === '23514' || /check/i.test(error.message)) {
+      throw new Error('Username must be 2–24 characters.');
+    }
+    throw new Error(error.message);
+  }
+}
+
+/** Permanently delete the signed-in user's account and all their data. */
+export async function deleteAccount(): Promise<void> {
+  const { error } = await supabase.rpc('delete_own_account');
+  if (error) throw new Error(error.message);
+}
+
 export async function getMyProfile(userId: string): Promise<Profile | null> {
   const { data } = await supabase
     .from('profiles')

@@ -16,8 +16,8 @@ import Svg, { Path } from 'react-native-svg';
 import { useFocusEffect } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
-import { choosePhotoSource, showMessage } from '@/lib/dialog';
-import { getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
+import { choosePhotoSource, confirmAction, showMessage } from '@/lib/dialog';
+import { deleteAccount, getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
 import { applyReminder, getReminder, REMINDER_TIMES, type Reminder } from '@/lib/reminders';
 import { Card, GhostButton, colorFor } from '@/components/ui';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
@@ -107,6 +107,24 @@ export default function You() {
     if (source === 'library') await pickFromLibrary();
   }
 
+  async function handleDelete() {
+    const ok = await confirmAction({
+      title: 'Delete your account?',
+      message:
+        'This permanently deletes your check-ins, photos, and any crews you created. This can’t be undone.',
+      confirmLabel: 'Delete account',
+      cancelLabel: 'Keep account',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteAccount();
+      await signOut();
+    } catch (e) {
+      showMessage('Could not delete account', e instanceof Error ? e.message : 'Please try again.');
+    }
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -148,6 +166,9 @@ export default function You() {
           <Text style={styles.name}>{profile?.display_name ?? 'You'}</Text>
           {profile?.username && <Text style={styles.handle}>@{profile.username}</Text>}
           <Text style={styles.changeHint}>Tap your photo to change it</Text>
+          <Pressable onPress={() => router.push('/edit-profile')} style={styles.editBtn}>
+            <Text style={styles.editBtnText}>Edit profile</Text>
+          </Pressable>
         </View>
 
         <Card style={{ gap: space(3) }}>
@@ -208,6 +229,9 @@ export default function You() {
 
         <View style={{ height: space(6) }} />
         <GhostButton label="Sign out" onPress={signOut} />
+        <Pressable onPress={handleDelete} style={styles.deleteBtn}>
+          <Text style={styles.deleteText}>Delete account</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -246,6 +270,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   name: { fontSize: 24, fontWeight: '800', color: colors.ink, marginTop: space(1) },
   handle: { fontSize: 14, color: colors.inkSoft, fontWeight: '600' },
   changeHint: { fontSize: 12, color: colors.inkFaint, fontWeight: '600', marginTop: space(1) },
+  editBtn: {
+    marginTop: space(3),
+    paddingHorizontal: space(5),
+    paddingVertical: space(2.5),
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  editBtnText: { fontSize: 14, fontWeight: '800', color: colors.ink },
+  deleteBtn: { paddingVertical: space(3), alignItems: 'center' },
+  deleteText: { fontSize: 14, fontWeight: '700', color: colors.danger },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.ink },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   addCrew: { paddingVertical: space(1), paddingHorizontal: space(1) },
