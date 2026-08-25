@@ -9,6 +9,28 @@
 -- 1. Nudges: in-app delivery
 -- ---------------------------------------------------------------
 
+-- The nudges table normally comes from 0003 (push notifications). Create it
+-- here if it's missing so in-app nudges work without the push-token setup.
+create table if not exists nudges (
+  id           uuid primary key default gen_random_uuid(),
+  group_id     uuid not null references groups(id) on delete cascade,
+  sender_id    uuid not null references profiles(id) on delete cascade,
+  recipient_id uuid not null references profiles(id) on delete cascade,
+  delivered    boolean not null default false,
+  created_at   timestamptz not null default now(),
+  check (sender_id <> recipient_id)
+);
+
+create index if not exists nudges_lookup_idx
+  on nudges (group_id, sender_id, recipient_id, created_at desc);
+
+alter table nudges enable row level security;
+
+-- Recipients (and senders) can read their own nudge history.
+drop policy if exists "read own nudge history" on nudges;
+create policy "read own nudge history" on nudges
+  for select using (sender_id = auth.uid() or recipient_id = auth.uid());
+
 -- Recipients mark a nudge as seen once it's shown to them.
 alter table nudges add column if not exists seen boolean not null default false;
 
