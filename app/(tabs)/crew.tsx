@@ -277,7 +277,7 @@ export default function Crew() {
             </View>
           </>
         ) : (
-          <Feed feed={feed} onToggle={onToggleReaction} />
+          <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />
         )}
       </ScrollView>
     </SafeAreaView>
@@ -292,7 +292,7 @@ function applyToggle(summary: ReactionSummary, emoji: string, wasMine: boolean):
   return { counts, mine };
 }
 
-function Feed({ feed, onToggle }: { feed: FeedItem[]; onToggle: (item: FeedItem, emoji: string) => void }) {
+function Feed({ feed, onToggle, myUserId }: { feed: FeedItem[]; onToggle: (item: FeedItem, emoji: string) => void; myUserId?: string }) {
   const styles = useStyles();
   if (feed.length === 0) {
     return (
@@ -312,7 +312,7 @@ function Feed({ feed, onToggle }: { feed: FeedItem[]; onToggle: (item: FeedItem,
         return (
           <View key={item.id}>
             {showDay && <Text style={styles.dayHeader}>{relativeDayLabel(item.local_date)}</Text>}
-            <FeedCard item={item} onToggle={onToggle} />
+            <FeedCard item={item} onToggle={onToggle} isMine={item.user_id === myUserId} />
           </View>
         );
       })}
@@ -320,7 +320,7 @@ function Feed({ feed, onToggle }: { feed: FeedItem[]; onToggle: (item: FeedItem,
   );
 }
 
-function FeedCard({ item, onToggle }: { item: FeedItem; onToggle: (item: FeedItem, emoji: string) => void }) {
+function FeedCard({ item, onToggle, isMine }: { item: FeedItem; onToggle: (item: FeedItem, emoji: string) => void; isMine?: boolean }) {
   const styles = useStyles();
   const time = new Date(item.created_at).toLocaleTimeString(undefined, {
     hour: 'numeric',
@@ -331,7 +331,7 @@ function FeedCard({ item, onToggle }: { item: FeedItem; onToggle: (item: FeedIte
       <View style={styles.feedTop}>
         <Avatar name={item.author.display_name} color={colorFor(item.author.id)} uri={item.author.avatar_url} size={38} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.feedName}>{item.author.display_name}</Text>
+          <Text style={styles.feedName}>{isMine ? 'You' : item.author.display_name}</Text>
           <Text style={styles.feedMeta}>
             {ACTIVITY_LABEL[item.activity] ?? 'Moved'} · {time}
           </Text>
