@@ -138,6 +138,16 @@ export async function deleteGroup(groupId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** Creator-only: rename a crew. Returns the updated group. */
+export async function renameGroup(groupId: string, name: string): Promise<Group> {
+  const { data, error } = await supabase.rpc('rename_group', {
+    p_group_id: groupId,
+    p_name: name,
+  });
+  if (error) throw new Error(error.message);
+  return data as Group;
+}
+
 export async function joinGroupByCode(code: string): Promise<Group> {
   const { data, error } = await supabase.rpc('join_group_by_code', {
     p_code: code.trim().toUpperCase(),

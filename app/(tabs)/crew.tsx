@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +22,7 @@ import {
   getCrew,
   getFeed,
   leaveGroup,
+  renameGroup,
   sendNudge,
   toggleReaction,
   REACTION_EMOJIS,
@@ -41,7 +44,7 @@ const ACTIVITY_LABEL: Record<string, string> = { gym: 'Gym', run: 'Run', lift: '
 export default function Crew() {
   const { user } = useAuth();
   const router = useRouter();
-  const { activeGroup, loading: groupsLoading, refreshGroups } = useActiveGroup();
+  const { activeGroup, loading: groupsLoading, refreshGroups, setActiveGroup } = useActiveGroup();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [crew, setCrew] = useState<CrewView | null>(null);
@@ -50,6 +53,31 @@ export default function Crew() {
   const [loading, setLoading] = useState(true);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const isOwner = !!crew && user?.id === crew.group.created_by;
+
+  async function submitRename() {
+    if (!crew) return;
+    const next = renameValue.trim();
+    if (!next || next === crew.group.name) {
+      setRenaming(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      const updated = await renameGroup(crew.group.id, next);
+      setCrew({ ...crew, group: updated });
+      await refreshGroups();
+      await setActiveGroup(updated);
+      setRenaming(false);
+    } catch (error) {
+      showMessage('Could not rename crew', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
@@ -217,7 +245,14 @@ export default function Crew() {
       >
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.title}>{crew.group.name}</Text>
+            <Pressable
+              disabled={!isOwner}
+              onPress={() => { setRenameValue(crew.group.name); setRenaming(true); }}
+              style={({ pressed }) => [styles.titleRow, pressed && isOwner && { opacity: 0.6 }]}
+            >
+              <Text style={styles.title}>{crew.group.name}</Text>
+              {isOwner ? <Text style={styles.titleEdit}>Edit</Text> : null}
+            </Pressable>
             <Text style={styles.sub}>
               {crew.members.length} {crew.members.length === 1 ? 'friend' : 'friends'} ·{' '}
               {crew.group.target_days_per_week}× / week
@@ -266,10 +301,18 @@ export default function Crew() {
             </Pressable>
 
             <View style={styles.manage}>
+              {isOwner && (
+                <Pressable
+                  onPress={() => { setRenameValue(crew.group.name); setRenaming(true); }}
+                  style={styles.manageBtn}
+                >
+                  <Text style={styles.renameText}>Rename crew</Text>
+                </Pressable>
+              )}
               <Pressable onPress={confirmLeave} style={styles.manageBtn}>
                 <Text style={styles.leaveText}>Leave crew</Text>
               </Pressable>
-              {user?.id === crew.group.created_by && (
+              {isOwner && (
                 <Pressable onPress={confirmDeleteCrew} style={styles.manageBtn}>
                   <Text style={styles.deleteCrewText}>Delete crew</Text>
                 </Pressable>
@@ -280,6 +323,33 @@ export default function Crew() {
           <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />
         )}
       </ScrollView>
+
+      <Modal visible={renaming} transparent animationType="fade" onRequestClose={() => setRenaming(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => !savingName && setRenaming(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Rename crew</Text>
+            <TextInput
+              value={renameValue}
+              onChangeText={setRenameValue}
+              placeholder="Crew name"
+              placeholderTextColor={colors.inkFaint}
+              maxLength={40}
+              autoFocus
+              style={styles.modalInput}
+              onSubmitEditing={submitRename}
+              returnKeyType="done"
+            />
+            <View style={styles.modalRow}>
+              <Pressable onPress={() => setRenaming(false)} style={styles.modalBtn} disabled={savingName}>
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={submitRename} style={[styles.modalBtn, styles.modalSave]} disabled={savingName}>
+                <Text style={styles.modalSaveText}>{savingName ? 'Saving…' : 'Save'}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -424,7 +494,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { color: colors.inkSoft, fontSize: 15, fontWeight: '600' },
   scroll: { padding: space(6), paddingBottom: space(10) },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: space(4) },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
   title: { fontSize: 26, fontWeight: '800', color: colors.ink },
+  titleEdit: { fontSize: 12, fontWeight: '800', color: colors.coral, textTransform: 'uppercase', letterSpacing: 0.5 },
   sub: { fontSize: 13, color: colors.inkSoft, fontWeight: '600', marginTop: 2 },
   segment: {
     flexDirection: 'row',
@@ -491,8 +563,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   inviteHint: { fontSize: 12, color: colors.teal, fontWeight: '700' },
   manage: { marginTop: space(5), alignItems: 'center', gap: space(1) },
   manageBtn: { paddingVertical: space(2.5), alignItems: 'center' },
+  renameText: { fontSize: 14, fontWeight: '700', color: colors.coral },
   leaveText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
   deleteCrewText: { fontSize: 14, fontWeight: '700', color: colors.danger },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: space(6) },
+  modalCard: { width: '100%', maxWidth: 380, backgroundColor: colors.surface, borderRadius: radius.lg, padding: space(5), gap: space(4) },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.ink },
+  modalInput: { borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface2, color: colors.ink, fontSize: 16, paddingHorizontal: space(4), paddingVertical: space(3) },
+  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: space(2) },
+  modalBtn: { paddingVertical: space(2.5), paddingHorizontal: space(4), borderRadius: radius.md },
+  modalCancel: { fontSize: 15, fontWeight: '700', color: colors.inkSoft },
+  modalSave: { backgroundColor: colors.coral },
+  modalSaveText: { fontSize: 15, fontWeight: '800', color: colors.white },
   // feed
   dayHeader: {
     fontSize: 13,
