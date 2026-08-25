@@ -98,7 +98,7 @@ export default function Crew() {
     if (!crew) return;
     const confirmed = await confirmAction({
       title: `Nudge ${member.profile.display_name}?`,
-      message: `They’ll get a push notification from you for ${crew.group.name}.`,
+      message: `They’ll see your nudge on their Today screen for ${crew.group.name}.`,
       confirmLabel: 'Send nudge',
     });
     if (!confirmed) return;
@@ -108,13 +108,11 @@ export default function Crew() {
     try {
       const result = await sendNudge(crew.group.id, member.profile.id);
       if (result.delivered) {
-        showMessage('Nudge sent 👋', `${member.profile.display_name} got your reminder.`);
-      } else if (result.reason === 'not_registered') {
-        showMessage('Couldn’t deliver the nudge', `${member.profile.display_name} hasn’t enabled push notifications yet.`);
+        showMessage('Nudge sent 👋', `${member.profile.display_name} will see it next time they open Huddle.`);
       } else if (result.reason === 'rate_limited') {
         showMessage('Already nudged', `Give ${member.profile.display_name} a little time—you can nudge them again later.`);
       } else {
-        showMessage('Couldn’t deliver the nudge', 'The push service did not accept it. Please try again later.');
+        showMessage('Couldn’t send the nudge', 'Please try again in a moment.');
       }
     } catch (error) {
       showMessage('Could not send nudge', error instanceof Error ? error.message : 'Please try again.');

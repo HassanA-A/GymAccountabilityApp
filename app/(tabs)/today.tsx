@@ -19,14 +19,18 @@ import { useActiveGroup } from '@/lib/active-group';
 import { confirmAction, showMessage } from '@/lib/dialog';
 import {
   createCheckIn,
+  getIncomingNudges,
   getMyWeekStatus,
   getTodayCheckIn,
   getTodayStatus,
+  markNudgesSeen,
   undoTodayCheckIn,
   type Activity,
   type CheckIn,
+  type IncomingNudge,
   type WeekStatus,
 } from '@/lib/db';
+import { getCheckInLocation } from '@/lib/location';
 import { Milo, type Mood } from '@/components/Milo';
 import { Celebration } from '@/components/Celebration';
 import { Card, CrewSwitcher, PrimaryButton } from '@/components/ui';
@@ -83,10 +87,19 @@ export default function Today() {
   const [refreshing, setRefreshing] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [celebrateStreak, setCelebrateStreak] = useState(0);
+  const [nudges, setNudges] = useState<IncomingNudge[]>([]);
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
+    let active = true;
+    getIncomingNudges().then((n) => { if (active) setNudges(n); }).catch(() => {});
+    return () => { active = false; };
   }, [refreshGroups]));
+
+  async function dismissNudges() {
+    setNudges([]);
+    try { await markNudgesSeen(); } catch { /* best effort */ }
+  }
 
   const onRefresh = useCallback(async () => {
     if (!user || !group) return;
@@ -169,12 +182,18 @@ export default function Today() {
     tap();
     setSubmitting(true);
     try {
+      // Try to confirm they're actually out moving. Never block the check-in on
+      // it — a denied/unavailable fix just logs without coordinates.
+      const loc = await getCheckInLocation();
       const ci = await createCheckIn({
         groupId: group.id,
         userId: user.id,
         activity,
         note,
         photoUri: photo,
+        lat: loc.status === 'granted' ? loc.lat : null,
+        lng: loc.status === 'granted' ? loc.lng : null,
+        locationGranted: loc.status === 'granted',
       });
       success();
       setCheckIn(ci);
@@ -239,6 +258,16 @@ export default function Today() {
         <Text style={styles.date}>{PRETTY_DATE()}</Text>
         <CrewSwitcher />
 
+        {nudges.length > 0 && (
+          <Pressable onPress={dismissNudges} style={styles.nudgeBanner}>
+            <Text style={styles.nudgeBannerIcon}>👋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.nudgeBannerText}>{nudgeLine(nudges)}</Text>
+              <Text style={styles.nudgeBannerSub}>Tap to dismiss</Text>
+            </View>
+          </Pressable>
+        )}
+
         <View style={styles.miloWrap}>
           <Milo mood={milo.mood} size={168} />
           {milo.line ? <Text style={styles.miloLine}>{milo.line}</Text> : null}
@@ -248,6 +277,13 @@ export default function Today() {
           <Card style={styles.doneCard}>
             <Text style={styles.doneTitle}>You showed up! 🎉</Text>
             <Text style={styles.doneSub}>{labelFor(checkIn.activity)} · {group.name}</Text>
+            {checkIn.location_granted === true ? (
+              <Text style={styles.locOk}>📍 Location confirmed</Text>
+            ) : checkIn.location_granted === false ? (
+              <Text style={styles.locOff}>
+                📍 Location was off — turn it on to confirm you’re at the gym.
+              </Text>
+            ) : null}
             {checkIn.note ? <Text style={styles.doneNote}>{checkIn.note}</Text> : null}
             {checkIn.photo_url && (
               <Image source={{ uri: checkIn.photo_url }} style={styles.donePhoto} contentFit="cover" />
@@ -324,6 +360,13 @@ function labelFor(activity: Activity) {
   return ACTIVITIES.find((item) => item.key === activity)?.label ?? 'Logged';
 }
 
+function nudgeLine(nudges: IncomingNudge[]): string {
+  const names = Array.from(new Set(nudges.map((n) => n.sender_name)));
+  if (names.length === 1) return `${names[0]} nudged you — go move today.`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} nudged you — go move today.`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more nudged you — go move today.`;
+}
+
 function PhotoButton({ label, onPress, icon }: { label: string; onPress: () => void; icon: 'camera' | 'image' }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -386,6 +429,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   doneCard: { alignItems: 'center', gap: space(2) },
   doneTitle: { fontSize: 20, fontWeight: '800', color: colors.ink },
   doneSub: { fontSize: 14, color: colors.inkSoft, fontWeight: '600', textAlign: 'center' },
+  locOk: { fontSize: 13, color: colors.mint, fontWeight: '700', textAlign: 'center' },
+  locOff: { fontSize: 13, color: colors.gold, fontWeight: '700', textAlign: 'center', maxWidth: 300 },
+  nudgeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(3),
+    backgroundColor: colors.surface2,
+    borderWidth: 1.5,
+    borderColor: colors.coral,
+    borderRadius: radius.md,
+    padding: space(3.5),
+    marginTop: space(3),
+  },
+  nudgeBannerIcon: { fontSize: 22 },
+  nudgeBannerText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  nudgeBannerSub: { color: colors.inkFaint, fontSize: 12, fontWeight: '600', marginTop: 2 },
   doneNote: { alignSelf: 'stretch', color: colors.ink, fontSize: 14, lineHeight: 20, backgroundColor: colors.surface2, borderRadius: radius.md, padding: space(3), marginTop: space(1) },
   donePhoto: { width: '100%', height: 240, borderRadius: radius.md, marginTop: space(2), backgroundColor: colors.surface2 },
   undo: { marginTop: space(2), paddingVertical: space(2) },

@@ -31,6 +31,9 @@ export type CheckIn = {
   activity: Activity;
   note: string | null;
   photo_url: string | null;
+  lat: number | null;
+  lng: number | null;
+  location_granted: boolean | null;
 };
 
 export type CrewMember = {
@@ -245,6 +248,9 @@ export async function createCheckIn(opts: {
   activity: Activity;
   note?: string;
   photoUri?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  locationGranted?: boolean | null;
 }): Promise<CheckIn> {
   let photo_url: string | null = null;
   if (opts.photoUri) {
@@ -259,6 +265,9 @@ export async function createCheckIn(opts: {
       activity: opts.activity,
       note: opts.note?.trim() || null,
       photo_url,
+      lat: opts.lat ?? null,
+      lng: opts.lng ?? null,
+      location_granted: opts.locationGranted ?? null,
     })
     .select('*')
     .single();
@@ -282,15 +291,40 @@ export async function savePushToken(userId: string, token: string): Promise<void
 
 export type NudgeResult = {
   delivered: boolean;
-  reason?: 'not_registered' | 'rate_limited' | 'delivery_failed';
+  reason?: 'not_registered' | 'rate_limited' | 'delivery_failed' | 'self' | 'not_in_group' | 'not_authenticated';
 };
 
+// Nudges are delivered in-app: send_nudge records the nudge (with a membership
+// check + rate limit), and the recipient sees it on their Today screen next
+// time they open the app. Real push notifications can layer on later without
+// changing this call.
 export async function sendNudge(groupId: string, recipientId: string): Promise<NudgeResult> {
-  const { data, error } = await supabase.functions.invoke('send-nudge', {
-    body: { groupId, recipientId },
+  const { data, error } = await supabase.rpc('send_nudge', {
+    p_group_id: groupId,
+    p_recipient_id: recipientId,
   });
   if (error) throw new Error(error.message);
   return data as NudgeResult;
+}
+
+export type IncomingNudge = {
+  id: string;
+  group_id: string;
+  group_name: string;
+  sender_name: string;
+  created_at: string;
+};
+
+/** Unseen nudges sent to the signed-in user, newest first. */
+export async function getIncomingNudges(): Promise<IncomingNudge[]> {
+  const { data, error } = await supabase.rpc('incoming_nudges');
+  if (error) return [];
+  return (data ?? []) as IncomingNudge[];
+}
+
+/** Clear the signed-in user's unseen nudges once they've been shown. */
+export async function markNudgesSeen(): Promise<void> {
+  await supabase.rpc('mark_nudges_seen');
 }
 
 async function getStreak(userId: string, groupId: string): Promise<number> {
