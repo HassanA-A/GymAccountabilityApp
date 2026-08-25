@@ -109,9 +109,16 @@ export async function getMyProfile(userId: string): Promise<Profile | null> {
 
 /** Groups the signed-in user belongs to. */
 export async function getMyGroups(): Promise<Group[]> {
+  // RLS lets you read every member of crews you're in, so without this filter
+  // the query returns one row per member (i.e. the same crew repeated). Scope
+  // it to your own membership rows — one row per crew.
+  const { data: { session } } = await supabase.auth.getSession();
+  const uid = session?.user?.id;
+  if (!uid) return [];
   const { data, error } = await supabase
     .from('group_members')
     .select('groups(*)')
+    .eq('user_id', uid)
     .order('joined_at', { ascending: true });
   if (error) throw new Error(error.message);
   return ((data ?? []).map((row: any) => row.groups).filter(Boolean)) as Group[];
