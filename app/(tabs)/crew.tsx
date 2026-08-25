@@ -11,13 +11,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useActiveGroup } from '@/lib/active-group';
 import { confirmAction, showMessage } from '@/lib/dialog';
 import {
+  deleteGroup,
   getCrew,
   getFeed,
+  leaveGroup,
   sendNudge,
   toggleReaction,
   REACTION_EMOJIS,
@@ -38,6 +40,7 @@ const ACTIVITY_LABEL: Record<string, string> = { gym: 'Gym', run: 'Run', lift: '
 
 export default function Crew() {
   const { user } = useAuth();
+  const router = useRouter();
   const { activeGroup, loading: groupsLoading, refreshGroups } = useActiveGroup();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -145,6 +148,48 @@ export default function Crew() {
     });
   }
 
+  async function afterMembershipChange() {
+    const next = await refreshGroups();
+    if (!next) router.replace('/onboarding');
+  }
+
+  async function confirmLeave() {
+    if (!crew) return;
+    const ok = await confirmAction({
+      title: `Leave ${crew.group.name}?`,
+      message: 'You’ll stop seeing this crew’s check-ins. You can rejoin later with the invite code.',
+      confirmLabel: 'Leave crew',
+      cancelLabel: 'Stay',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await leaveGroup(crew.group.id);
+      tap();
+      await afterMembershipChange();
+    } catch (e) {
+      showMessage('Could not leave', e instanceof Error ? e.message : 'Please try again.');
+    }
+  }
+
+  async function confirmDeleteCrew() {
+    if (!crew) return;
+    const ok = await confirmAction({
+      title: `Delete ${crew.group.name}?`,
+      message: 'This deletes the crew and everyone’s check-ins in it. This can’t be undone.',
+      confirmLabel: 'Delete crew',
+      cancelLabel: 'Keep crew',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteGroup(crew.group.id);
+      await afterMembershipChange();
+    } catch (e) {
+      showMessage('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+    }
+  }
+
   if (loading || groupsLoading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -221,6 +266,17 @@ export default function Crew() {
               <Text style={styles.inviteCode}>{crew.group.invite_code}</Text>
               <Text style={styles.inviteHint}>Tap to share</Text>
             </Pressable>
+
+            <View style={styles.manage}>
+              <Pressable onPress={confirmLeave} style={styles.manageBtn}>
+                <Text style={styles.leaveText}>Leave crew</Text>
+              </Pressable>
+              {user?.id === crew.group.created_by && (
+                <Pressable onPress={confirmDeleteCrew} style={styles.manageBtn}>
+                  <Text style={styles.deleteCrewText}>Delete crew</Text>
+                </Pressable>
+              )}
+            </View>
           </>
         ) : (
           <Feed feed={feed} onToggle={onToggleReaction} />
@@ -435,6 +491,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   inviteCode: { fontSize: 28, fontWeight: '800', color: colors.ink, letterSpacing: 4 },
   inviteHint: { fontSize: 12, color: colors.teal, fontWeight: '700' },
+  manage: { marginTop: space(5), alignItems: 'center', gap: space(1) },
+  manageBtn: { paddingVertical: space(2.5), alignItems: 'center' },
+  leaveText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
+  deleteCrewText: { fontSize: 14, fontWeight: '700', color: colors.danger },
   // feed
   dayHeader: {
     fontSize: 13,

@@ -123,6 +123,18 @@ export async function createGroup(name: string, target: number): Promise<Group> 
   return data as Group;
 }
 
+/** Leave a crew (hands off ownership if you created it). */
+export async function leaveGroup(groupId: string): Promise<void> {
+  const { error } = await supabase.rpc('leave_group', { p_group_id: groupId });
+  if (error) throw new Error(error.message);
+}
+
+/** Delete a crew entirely — creator only. */
+export async function deleteGroup(groupId: string): Promise<void> {
+  const { error } = await supabase.rpc('delete_group', { p_group_id: groupId });
+  if (error) throw new Error(error.message);
+}
+
 export async function joinGroupByCode(code: string): Promise<Group> {
   const { data, error } = await supabase.rpc('join_group_by_code', {
     p_code: code.trim().toUpperCase(),

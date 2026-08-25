@@ -28,6 +28,7 @@ import {
   type WeekStatus,
 } from '@/lib/db';
 import { Milo, type Mood } from '@/components/Milo';
+import { Celebration } from '@/components/Celebration';
 import { Card, CrewSwitcher, PrimaryButton } from '@/components/ui';
 import { success, select, tap } from '@/lib/haptics';
 import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
@@ -80,6 +81,8 @@ export default function Today() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const [celebrateStreak, setCelebrateStreak] = useState(0);
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
@@ -177,8 +180,11 @@ export default function Today() {
       setCheckIn(ci);
       setPhoto(null);
       setNote('');
-      setStatus(await getTodayStatus(group.id));
-      setWeek(await getMyWeekStatus(group, user.id));
+      const [st, wk] = await Promise.all([getTodayStatus(group.id), getMyWeekStatus(group, user.id)]);
+      setStatus(st);
+      setWeek(wk);
+      setCelebrateStreak(wk.streak);
+      setCelebrate(true);
     } catch (error) {
       showMessage('Could not check in', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -305,6 +311,11 @@ export default function Today() {
           in {group.name} {status.inCount === 1 ? 'is' : 'are'} in today
         </Text>
       </ScrollView>
+      <Celebration
+        visible={celebrate}
+        streak={celebrateStreak}
+        onDone={() => setCelebrate(false)}
+      />
     </SafeAreaView>
   );
 }
