@@ -8,6 +8,7 @@ import { ActiveGroupProvider } from '@/lib/active-group';
 import { NotificationRegistrar } from '@/lib/notifications';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 import { Milo } from '@/components/Milo';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 function Gate() {
   const { session, loading } = useAuth();
@@ -69,6 +70,7 @@ function ThemedApp() {
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Gate />
+      <InstallPrompt />
     </>
   );
 }

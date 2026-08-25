@@ -7,7 +7,7 @@ const FILE = 'dist/index.html';
 
 const TAGS = `
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#E7F6F4" />
+    <meta name="theme-color" content="#0F172A" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

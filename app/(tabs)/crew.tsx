@@ -531,7 +531,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.surface2,
   },
-  reactionOn: { borderColor: colors.coral, backgroundColor: 'rgba(255,106,61,0.14)' },
+  reactionOn: { borderColor: colors.coral, backgroundColor: 'rgba(76,141,255,0.18)' },
   reactionEmoji: { fontSize: 15 },
   reactionCount: { fontSize: 13, fontWeight: '800', color: colors.inkSoft },
   reactionCountOn: { color: colors.coral },

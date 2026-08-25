@@ -1,46 +1,49 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
+
+// "Midnight" palette. Token names are kept from the original theme so the whole
+// app restyles by swapping values here: `coral` = primary (blue), `teal` =
+// accent (violet), `mint` = success, `gold` = reward, `danger` = destructive.
 
 export const lightColors = {
-  bg: '#E7F6F4',
-  bg2: '#D6EFEC',
+  bg: '#F5F7FB',
+  bg2: '#E7EDF9',
   surface: '#FFFFFF',
-  surface2: '#F1FAF9',
-  ink: '#213A40',
-  inkSoft: '#5E7C80',
-  inkFaint: '#9DBCBE',
-  line: '#D5EBE8',
-  coral: '#FF6A3D',
-  coralDeep: '#E8542A',
-  blush: '#FF9E8A',
-  mint: '#12B183',
-  mintBg: '#D2F1E7',
-  teal: '#1AA6B8',
-  gold: '#FFB23E',
+  surface2: '#F1F5FB',
+  ink: '#1E2A3A',
+  inkSoft: '#5A6B85',
+  inkFaint: '#9AA8BF',
+  line: '#E2E8F2',
+  coral: '#3B6FF6',
+  coralDeep: '#2F5BD8',
+  blush: '#93B4FF',
+  mint: '#12B36A',
+  mintBg: '#DCF5E8',
+  teal: '#7C6FF0',
+  gold: '#F59E0B',
   duck: '#FFD23E',
   white: '#FFFFFF',
-  danger: '#E8542A',
+  danger: '#E5484D',
 } as const;
 
 export const darkColors: ThemeColors = {
-  bg: '#0D2023',
-  bg2: '#132B2E',
-  surface: '#173034',
-  surface2: '#1D393D',
-  ink: '#ECF8F6',
-  inkSoft: '#A8C7C7',
-  inkFaint: '#729496',
-  line: '#2B4B4E',
-  coral: '#FF7952',
-  coralDeep: '#FF8B69',
-  blush: '#FFAB99',
-  mint: '#39C99C',
-  mintBg: '#204E43',
-  teal: '#45C2D0',
-  gold: '#FFC15C',
+  bg: '#0F172A',
+  bg2: '#172136',
+  surface: '#1E293B',
+  surface2: '#273449',
+  ink: '#E8EEF7',
+  inkSoft: '#9FB0C9',
+  inkFaint: '#64748B',
+  line: '#2C3A52',
+  coral: '#4C8DFF',
+  coralDeep: '#3B76E0',
+  blush: '#8FB4FF',
+  mint: '#34D399',
+  mintBg: '#16342B',
+  teal: '#8B7CF6',
+  gold: '#FBBF24',
   duck: '#FFD95A',
   white: '#FFFFFF',
-  danger: '#FF7952',
+  danger: '#F87171',
 };
 
 export type ThemeColors = { [K in keyof typeof lightColors]: string };
@@ -50,11 +53,12 @@ type ThemeValue = {
   isDark: boolean;
 };
 
-const ThemeContext = createContext<ThemeValue>({ colors: lightColors, isDark: false });
+const ThemeContext = createContext<ThemeValue>({ colors: darkColors, isDark: true });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const isDark = useColorScheme() === 'dark';
-  const value = useMemo(() => ({ colors: isDark ? darkColors : lightColors, isDark }), [isDark]);
+  // Huddle commits to the Midnight look. (Swap to `useColorScheme() === 'dark'`
+  // to follow the device's light/dark setting instead.)
+  const value = useMemo(() => ({ colors: darkColors, isDark: true }), []);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
@@ -83,7 +87,7 @@ export function shadows(colors: ThemeColors) {
   return {
     card: {
       shadowColor: '#000000',
-      shadowOpacity: 0.18,
+      shadowOpacity: 0.35,
       shadowRadius: 18,
       shadowOffset: { width: 0, height: 8 },
       elevation: 3,
