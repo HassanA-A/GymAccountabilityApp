@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useActiveGroup } from '@/lib/active-group';
-import { lightColors, radius, shadows, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, lightColors, radius, shadows, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export function PrimaryButton({
   label,
@@ -41,7 +41,7 @@ export function PrimaryButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={colors.white} />
+        <ActivityIndicator color={colors.onCoral} />
       ) : (
         <>
           {icon}
@@ -153,9 +153,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   btnOff: { opacity: 0.5 },
   btnPressed: { transform: [{ translateY: 1 }], opacity: 0.92 },
-  btnText: { color: colors.white, fontSize: 18, fontWeight: '800' },
+  btnText: { color: colors.onCoral, fontSize: 18, fontWeight: '800', fontFamily: fonts.display },
   ghost: { paddingVertical: space(3), alignItems: 'center' },
-  ghostText: { color: colors.inkSoft, fontSize: 15, fontWeight: '600' },
+  ghostText: { color: colors.inkSoft, fontSize: 15, fontWeight: '600', fontFamily: fonts.ui },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -164,7 +164,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: space(5),
   },
   avatar: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.white, fontWeight: '800' },
+  avatarText: { color: colors.white, fontWeight: '800', fontFamily: fonts.display },
   switcherWrap: { gap: space(1.5), marginBottom: space(4) },
   switcherLabel: {
     color: colors.inkSoft,
@@ -172,6 +172,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
+    fontFamily: fonts.ui,
   },
   switcher: { gap: space(2) },
   crewChip: {
@@ -182,7 +183,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: space(3.5),
     paddingVertical: space(2),
   },
-  crewChipOn: { backgroundColor: colors.teal, borderColor: colors.teal },
-  crewChipText: { color: colors.inkSoft, fontSize: 13, fontWeight: '700' },
-  crewChipTextOn: { color: colors.white },
+  crewChipOn: { backgroundColor: colors.coral, borderColor: colors.coral },
+  crewChipText: { color: colors.inkSoft, fontSize: 13, fontWeight: '700', fontFamily: fonts.ui },
+  crewChipTextOn: { color: colors.onCoral },
 });

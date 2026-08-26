@@ -20,7 +20,7 @@ import { choosePhotoSource, confirmAction, showMessage } from '@/lib/dialog';
 import { deleteAccount, getMyGroups, getMyProfile, updateAvatar, type Group, type Profile } from '@/lib/db';
 import { applyReminder, getReminder, REMINDER_TIMES, type Reminder } from '@/lib/reminders';
 import { Card, GhostButton, colorFor } from '@/components/ui';
-import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 export default function You() {
   const { user, signOut } = useAuth();
@@ -149,16 +149,16 @@ export default function You() {
             )}
             <View style={styles.camBadge}>
               {uploading ? (
-                <ActivityIndicator color={colors.white} size="small" />
+                <ActivityIndicator color={colors.onCoral} size="small" />
               ) : (
                 <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
                   <Path
                     d="M4 8.5A2.5 2.5 0 016.5 6h1l1.2-1.8a1 1 0 01.83-.45h5a1 1 0 01.83.45L16.5 6h1A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"
-                    stroke={colors.white}
+                    stroke={colors.onCoral}
                     strokeWidth={2}
                     strokeLinejoin="round"
                   />
-                  <Path d="M12 15.5a3 3 0 100-6 3 3 0 000 6z" stroke={colors.white} strokeWidth={2} />
+                  <Path d="M12 15.5a3 3 0 100-6 3 3 0 000 6z" stroke={colors.onCoral} strokeWidth={2} />
                 </Svg>
               )}
             </View>
@@ -267,7 +267,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 3,
     borderColor: colors.bg,
   },
-  name: { fontSize: 24, fontWeight: '800', color: colors.ink, marginTop: space(1) },
+  name: { fontSize: 26, fontWeight: '800', color: colors.ink, marginTop: space(1), fontFamily: fonts.display, letterSpacing: -0.3 },
   handle: { fontSize: 14, color: colors.inkSoft, fontWeight: '600' },
   changeHint: { fontSize: 12, color: colors.inkFaint, fontWeight: '600', marginTop: space(1) },
   editBtn: {
@@ -309,6 +309,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   timeChipOn: { backgroundColor: colors.coral, borderColor: colors.coral },
   timeChipText: { fontSize: 13, fontWeight: '700', color: colors.inkSoft },
-  timeChipTextOn: { color: colors.white },
+  timeChipTextOn: { color: colors.onCoral },
   webNote: { fontSize: 12, color: colors.inkFaint, fontStyle: 'italic' },
 });

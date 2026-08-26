@@ -15,7 +15,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/lib/auth';
 import { Milo } from '@/components/Milo';
 import { GhostButton, PrimaryButton } from '@/components/ui';
-import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type Mode = 'in' | 'up';
 
@@ -196,7 +196,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: space(6), gap: space(6) },
   hero: { alignItems: 'center', gap: space(1) },
-  title: { fontSize: 40, fontWeight: '800', color: colors.ink, marginTop: space(2) },
+  title: { fontSize: 40, fontWeight: '800', color: colors.ink, marginTop: space(2), fontFamily: fonts.display, letterSpacing: -0.8 },
   subtitle: { fontSize: 16, color: colors.inkSoft, fontWeight: '600' },
   form: { gap: space(3) },
   google: {

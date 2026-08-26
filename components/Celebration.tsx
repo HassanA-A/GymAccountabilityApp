@@ -9,9 +9,9 @@ import {
   Text,
 } from 'react-native';
 import { Milo } from './Milo';
-import { useTheme } from '@/lib/theme';
+import { fonts, useTheme } from '@/lib/theme';
 
-const CONFETTI_COLORS = ['#FF6A3D', '#FFD23E', '#22C1D4', '#12B183', '#FF9E8A', '#FFB23E'];
+const CONFETTI_COLORS = ['#DCB985', '#EBC06A', '#C4D89A', '#E7CFA5', '#D6A98C', '#F2C97A'];
 const COUNT = 16;
 
 /** A quick, tappable confetti + Milo celebration shown after a check-in. */
@@ -106,11 +106,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(10,20,25,0.45)',
+    backgroundColor: 'rgba(14,13,12,0.55)',
     padding: 32,
   },
   confetti: { position: 'absolute', top: 0, borderRadius: 2 },
   card: { alignItems: 'center', borderRadius: 28, paddingVertical: 28, paddingHorizontal: 40, gap: 6 },
-  title: { fontSize: 22, fontWeight: '800', marginTop: 6 },
-  streak: { fontSize: 15, fontWeight: '800' },
+  title: { fontSize: 22, fontWeight: '800', marginTop: 6, fontFamily: fonts.display, letterSpacing: -0.3 },
+  streak: { fontSize: 15, fontWeight: '800', fontFamily: fonts.ui },
 });

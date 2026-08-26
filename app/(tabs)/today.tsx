@@ -33,9 +33,10 @@ import {
 import { getCheckInLocation } from '@/lib/location';
 import { Milo, type Mood } from '@/components/Milo';
 import { Celebration } from '@/components/Celebration';
+import { StreakDots } from '@/components/StreakDots';
 import { Card, CrewSwitcher, PrimaryButton } from '@/components/ui';
 import { success, select, tap } from '@/lib/haptics';
-import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 const ACTIVITIES: { key: Activity; label: string }[] = [
   { key: 'gym', label: 'Gym' },
@@ -271,6 +272,7 @@ export default function Today() {
         <View style={styles.miloWrap}>
           <Milo mood={milo.mood} size={168} />
           {milo.line ? <Text style={styles.miloLine}>{milo.line}</Text> : null}
+          {(week?.streak ?? 0) > 0 ? <StreakDots width={260} /> : null}
         </View>
 
         {done ? (
@@ -392,7 +394,7 @@ function PhotoButton({ label, onPress, icon }: { label: string; onPress: () => v
 
 function CheckIcon() {
   const { colors } = useTheme();
-  return <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M5 12.5l4.5 4.5L19 7" stroke={colors.white} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+  return <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M5 12.5l4.5 4.5L19 7" stroke={colors.onCoral} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
@@ -400,8 +402,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   empty: { color: colors.inkSoft, fontSize: 15, fontWeight: '600' },
   scroll: { padding: space(6), paddingBottom: space(10), gap: space(1) },
-  title: { fontSize: 30, fontWeight: '800', color: colors.ink },
-  date: { fontSize: 14, color: colors.inkSoft, fontWeight: '600', marginBottom: space(2) },
+  title: { fontSize: 32, fontWeight: '800', color: colors.ink, fontFamily: fonts.display, letterSpacing: -0.5 },
+  date: { fontSize: 14, color: colors.inkSoft, fontWeight: '600', marginBottom: space(2), fontFamily: fonts.ui },
   miloWrap: { alignItems: 'center', marginVertical: space(2), gap: space(1) },
   miloLine: {
     fontSize: 14,
@@ -410,13 +412,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     textAlign: 'center',
     maxWidth: 300,
   },
-  prompt: { fontSize: 19, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  prompt: { fontSize: 19, fontWeight: '800', color: colors.ink, textAlign: 'center', fontFamily: fonts.display },
   checkingInto: { fontSize: 12, color: colors.teal, fontWeight: '700', textAlign: 'center', marginBottom: space(4) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space(2), justifyContent: 'center' },
   chip: { borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: space(4), paddingVertical: space(2.5), backgroundColor: colors.surface },
   chipOn: { backgroundColor: colors.coral, borderColor: colors.coral },
   chipText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
-  chipTextOn: { color: colors.white },
+  chipTextOn: { color: colors.onCoral },
   noteInput: { minHeight: 78, marginTop: space(4), paddingHorizontal: space(4), paddingVertical: space(3), textAlignVertical: 'top', borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface2, color: colors.ink, fontSize: 15 },
   noteCount: { color: colors.inkFaint, fontSize: 11, textAlign: 'right', marginTop: space(1) },
   photoRow: { flexDirection: 'row', gap: space(3), marginTop: space(4) },
@@ -427,7 +429,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   photoRemove: { paddingVertical: space(1) },
   photoRemoveText: { color: colors.inkSoft, fontWeight: '600', fontSize: 13 },
   doneCard: { alignItems: 'center', gap: space(2) },
-  doneTitle: { fontSize: 20, fontWeight: '800', color: colors.ink },
+  doneTitle: { fontSize: 22, fontWeight: '800', color: colors.ink, fontFamily: fonts.display, letterSpacing: -0.3 },
   doneSub: { fontSize: 14, color: colors.inkSoft, fontWeight: '600', textAlign: 'center' },
   locOk: { fontSize: 13, color: colors.mint, fontWeight: '700', textAlign: 'center' },
   locOff: { fontSize: 13, color: colors.gold, fontWeight: '700', textAlign: 'center', maxWidth: 300 },

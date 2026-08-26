@@ -35,7 +35,7 @@ import { relativeDayLabel, weekDayLabels } from '@/lib/date';
 import { inviteLink } from '@/lib/pending-join';
 import { select, tap } from '@/lib/haptics';
 import { Avatar, Card, colorFor, CrewSwitcher } from '@/components/ui';
-import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type View2 = 'week' | 'feed';
 
@@ -495,7 +495,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { padding: space(6), paddingBottom: space(10) },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: space(4) },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
-  title: { fontSize: 26, fontWeight: '800', color: colors.ink },
+  title: { fontSize: 28, fontWeight: '800', color: colors.ink, fontFamily: fonts.display, letterSpacing: -0.4 },
   titleEdit: { fontSize: 12, fontWeight: '800', color: colors.coral, textTransform: 'uppercase', letterSpacing: 0.5 },
   sub: { fontSize: 13, color: colors.inkSoft, fontWeight: '600', marginTop: 2 },
   segment: {
@@ -510,7 +510,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   seg: { flex: 1, paddingVertical: space(2.5), borderRadius: radius.pill, alignItems: 'center' },
   segOn: { backgroundColor: colors.coral },
   segText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
-  segTextOn: { color: colors.white },
+  segTextOn: { color: colors.onCoral },
   progHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -574,7 +574,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   modalBtn: { paddingVertical: space(2.5), paddingHorizontal: space(4), borderRadius: radius.md },
   modalCancel: { fontSize: 15, fontWeight: '700', color: colors.inkSoft },
   modalSave: { backgroundColor: colors.coral },
-  modalSaveText: { fontSize: 15, fontWeight: '800', color: colors.white },
+  modalSaveText: { fontSize: 15, fontWeight: '800', color: colors.onCoral },
   // feed
   dayHeader: {
     fontSize: 13,

@@ -87,7 +87,7 @@ export function InstallPrompt() {
 
       {kind === 'android' ? (
         <Pressable onPress={install} style={[styles.install, { backgroundColor: colors.coral }]}>
-          <Text style={styles.installText}>Install</Text>
+          <Text style={[styles.installText, { color: colors.onCoral }]}>Install</Text>
         </Pressable>
       ) : (
         <ShareGlyph color={colors.coral} />

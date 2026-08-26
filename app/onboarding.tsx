@@ -15,7 +15,7 @@ import { createGroup, joinGroupByCode } from '@/lib/db';
 import { useActiveGroup } from '@/lib/active-group';
 import { Milo } from '@/components/Milo';
 import { PrimaryButton } from '@/components/ui';
-import { radius, space, useTheme, type ThemeColors } from '@/lib/theme';
+import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type Tab = 'create' | 'join';
 
@@ -159,7 +159,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: space(6), gap: space(5) },
   hero: { alignItems: 'center', gap: space(1) },
-  title: { fontSize: 28, fontWeight: '800', color: colors.ink, marginTop: space(2) },
+  title: { fontSize: 28, fontWeight: '800', color: colors.ink, marginTop: space(2), fontFamily: fonts.display, letterSpacing: -0.4 },
   subtitle: {
     fontSize: 15,
     color: colors.inkSoft,
@@ -172,7 +172,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   seg: { flex: 1, paddingVertical: space(2.5), borderRadius: radius.pill, alignItems: 'center' },
   segOn: { backgroundColor: colors.coral },
   segText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
-  segTextOn: { color: colors.white },
+  segTextOn: { color: colors.onCoral },
   form: { gap: space(3) },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: colors.inkSoft, marginLeft: space(1) },
   input: {
@@ -197,7 +197,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   targetOn: { backgroundColor: colors.teal, borderColor: colors.teal },
   targetText: { fontSize: 17, fontWeight: '800', color: colors.inkSoft },
-  targetTextOn: { color: colors.white },
+  targetTextOn: { color: colors.onCoral },
   hint: { fontSize: 13, color: colors.inkSoft, textAlign: 'center' },
   error: { color: colors.coralDeep, fontSize: 14, fontWeight: '600', textAlign: 'center' },
 });
