@@ -29,7 +29,7 @@ function webLocation(): Promise<LocationResult> {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ status: 'granted', lat: pos.coords.latitude, lng: pos.coords.longitude }),
       (err) => resolve({ status: err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable' }),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 }
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 120_000 }
     );
   });
 }

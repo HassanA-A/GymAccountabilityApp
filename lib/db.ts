@@ -358,33 +358,36 @@ async function getStreak(userId: string, groupId: string): Promise<number> {
 
 /** Everything the Crew screen needs: roster, this-week dots, and streaks. */
 export async function getCrew(group: Group, myUserId: string): Promise<CrewView> {
-  const [{ data: memberRows }, { data: checkRows }] = await Promise.all([
+  // Three fixed round-trips regardless of crew size (streaks are batched into
+  // one RPC instead of one query per member).
+  const [{ data: memberRows }, { data: checkRows }, { data: streakRows }] = await Promise.all([
     supabase.from('group_members').select('profiles(*)').eq('group_id', group.id),
     supabase
       .from('check_ins')
       .select('user_id, local_date')
       .eq('group_id', group.id)
       .gte('local_date', weekDates(group.week_start_dow)[0]),
+    supabase.rpc('group_streaks', { p_group_id: group.id }),
   ]);
 
   const week = weekDates(group.week_start_dow);
   const profiles = ((memberRows ?? []).map((r: any) => r.profiles).filter(Boolean)) as Profile[];
   const checks = (checkRows ?? []) as { user_id: string; local_date: string }[];
-
-  const members: CrewMember[] = await Promise.all(
-    profiles.map(async (profile) => {
-      const mine = checks.filter((c) => c.user_id === profile.id);
-      const days = week.map((d) => mine.some((c) => c.local_date === d));
-      const streak = await getStreak(profile.id, group.id);
-      return {
-        profile,
-        days,
-        daysHit: days.filter(Boolean).length,
-        streak,
-        isMe: profile.id === myUserId,
-      };
-    })
+  const streaks = new Map<string, number>(
+    ((streakRows ?? []) as { user_id: string; streak: number }[]).map((r) => [r.user_id, r.streak])
   );
+
+  const members: CrewMember[] = profiles.map((profile) => {
+    const mine = checks.filter((c) => c.user_id === profile.id);
+    const days = week.map((d) => mine.some((c) => c.local_date === d));
+    return {
+      profile,
+      days,
+      daysHit: days.filter(Boolean).length,
+      streak: streaks.get(profile.id) ?? 0,
+      isMe: profile.id === myUserId,
+    };
+  });
 
   // Me first, then most active.
   members.sort((a, b) => (a.isMe ? -1 : b.isMe ? 1 : b.daysHit - a.daysHit));

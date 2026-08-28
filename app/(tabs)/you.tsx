@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -42,10 +42,11 @@ export default function You() {
   const [reminder, setReminder] = useState<Reminder>({ enabled: false, hour: 18 });
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
+    if (!loadedRef.current) setLoading(true); // spinner only on first load; refocus refreshes quietly
     try {
       const [p, g, r] = await Promise.all([getMyProfile(user.id), getMyGroups(), getReminder()]);
       setProfile(p);
@@ -62,6 +63,7 @@ export default function You() {
       } else {
         setStats(null);
       }
+      loadedRef.current = true;
     } finally {
       setLoading(false);
     }
