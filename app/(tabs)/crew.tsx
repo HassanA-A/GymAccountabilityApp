@@ -21,6 +21,7 @@ import {
   deleteGroup,
   getCrew,
   getFeed,
+  getTodayStatus,
   leaveGroup,
   renameGroup,
   sendNudge,
@@ -31,15 +32,34 @@ import {
   type FeedItem,
   type ReactionSummary,
 } from '@/lib/db';
-import { relativeDayLabel, weekDayLabels } from '@/lib/date';
+import { weekDayLabels } from '@/lib/date';
 import { inviteLink } from '@/lib/pending-join';
 import { select, tap } from '@/lib/haptics';
-import { Avatar, Card, colorFor, CrewSwitcher } from '@/components/ui';
+import { Avatar, colorFor, CrewSwitcher } from '@/components/ui';
 import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
-type View2 = 'week' | 'feed';
+type Tab = 'members' | 'feed' | 'board' | 'settings';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'members', label: 'Members' },
+  { key: 'feed', label: 'Feed' },
+  { key: 'board', label: 'Board' },
+  { key: 'settings', label: 'Settings' },
+];
 
 const ACTIVITY_LABEL: Record<string, string> = { gym: 'Gym', run: 'Run', lift: 'Lift', other: 'Moved' };
+const ACTIVITY_EMOJI: Record<string, string> = { gym: '💪', run: '🏃', lift: '🏋️', other: '✨' };
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.round(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d === 1) return 'yesterday';
+  return `${d}d ago`;
+}
 
 export default function Crew() {
   const { user } = useAuth();
@@ -49,7 +69,8 @@ export default function Crew() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [crew, setCrew] = useState<CrewView | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [view, setView] = useState<View2>('week');
+  const [today, setToday] = useState({ inCount: 0, total: 0 });
+  const [tab, setTab] = useState<Tab>('members');
   const [loading, setLoading] = useState(true);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,20 +104,29 @@ export default function Crew() {
     refreshGroups();
   }, [refreshGroups]));
 
-  const onRefresh = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!user || !activeGroup) return;
+    const [nextCrew, nextFeed, nextToday] = await Promise.all([
+      getCrew(activeGroup, user.id),
+      getFeed(activeGroup.id, user.id),
+      getTodayStatus(activeGroup.id),
+    ]);
+    setCrew(nextCrew);
+    setFeed(nextFeed);
+    setToday(nextToday);
+  }, [user, activeGroup]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await refreshGroups();
-      const [nextCrew, nextFeed] = await Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id, user.id)]);
-      setCrew(nextCrew);
-      setFeed(nextFeed);
+      await load();
     } catch {
-      // Silent — the pull just won't update; next focus reload will retry.
+      // Silent — the next focus reload will retry.
     } finally {
       setRefreshing(false);
     }
-  }, [user, activeGroup, refreshGroups]);
+  }, [refreshGroups, load]);
 
   useEffect(() => {
     if (!user || groupsLoading) return;
@@ -109,18 +139,13 @@ export default function Crew() {
     let current = true;
     setLoading(true);
     setCrew(null);
-    Promise.all([getCrew(activeGroup, user.id), getFeed(activeGroup.id, user.id)])
-      .then(([nextCrew, nextFeed]) => {
-        if (!current) return;
-        setCrew(nextCrew);
-        setFeed(nextFeed);
-      })
+    load()
       .catch((error) => {
         if (current) showMessage('Could not load crew', error instanceof Error ? error.message : 'Please try again.');
       })
       .finally(() => current && setLoading(false));
     return () => { current = false; };
-  }, [activeGroup?.id, groupsLoading, user]);
+  }, [activeGroup?.id, groupsLoading, user, load]);
 
   async function nudge(member: CrewMember) {
     if (!crew) return;
@@ -130,7 +155,6 @@ export default function Crew() {
       confirmLabel: 'Send nudge',
     });
     if (!confirmed) return;
-
     tap();
     setNudgingId(member.profile.id);
     try {
@@ -154,14 +178,12 @@ export default function Crew() {
     const wasMine = item.reactions.mine.includes(emoji);
     const snapshot = item.reactions;
     select();
-    // Optimistic: update the count/highlight instantly, before the server call.
     setFeed((prev) =>
       prev.map((f) => (f.id === item.id ? { ...f, reactions: applyToggle(f.reactions, emoji, wasMine) } : f))
     );
     try {
       await toggleReaction(item.id, user.id, emoji, wasMine);
     } catch (error) {
-      // Roll back to the pre-tap state.
       setFeed((prev) => prev.map((f) => (f.id === item.id ? { ...f, reactions: snapshot } : f)));
       showMessage('Could not react', error instanceof Error ? error.message : 'Please try again.');
     }
@@ -170,7 +192,7 @@ export default function Crew() {
   async function shareCode() {
     if (!crew) return;
     await Share.share({
-      message: `Join my crew "${crew.group.name}" on Huddle 🦆\n${inviteLink(crew.group.invite_code)}`,
+      message: `Join my crew "${crew.group.name}" on Huddle 🐼\n${inviteLink(crew.group.invite_code)}`,
     });
   }
 
@@ -233,7 +255,9 @@ export default function Crew() {
   }
 
   const labels = weekDayLabels(crew.group.week_start_dow);
-  const pct = crew.targetTotal > 0 ? Math.min(1, crew.targetHit / crew.targetTotal) : 0;
+  const total = today.total || crew.members.length;
+  const pct = total > 0 ? Math.min(1, today.inCount / total) : 0;
+  const target = crew.group.target_days_per_week;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -243,84 +267,62 @@ export default function Crew() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.coral} colors={[colors.coral]} />
         }
       >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Pressable
-              disabled={!isOwner}
-              onPress={() => { setRenameValue(crew.group.name); setRenaming(true); }}
-              style={({ pressed }) => [styles.titleRow, pressed && isOwner && { opacity: 0.6 }]}
-            >
-              <Text style={styles.title}>{crew.group.name}</Text>
-              {isOwner ? <Text style={styles.titleEdit}>Edit</Text> : null}
-            </Pressable>
-            <Text style={styles.sub}>
-              {crew.members.length} {crew.members.length === 1 ? 'friend' : 'friends'} ·{' '}
-              {crew.group.target_days_per_week}× / week
-            </Text>
-          </View>
-        </View>
         <CrewSwitcher />
 
-        <View style={styles.segment}>
-          <Seg label="This week" active={view === 'week'} onPress={() => { select(); setView('week'); }} />
-          <Seg label="Feed" active={view === 'feed'} onPress={() => { select(); setView('feed'); }} />
+        {/* Header */}
+        <View style={styles.headRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eyebrow}>CREW</Text>
+            <Text style={styles.title}>{crew.group.name}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.count}>{today.inCount}/{total}</Text>
+            <Text style={styles.countLabel}>in today</Text>
+          </View>
+        </View>
+        <View style={styles.track}>
+          <View style={[styles.trackFill, { width: `${pct * 100}%` }]} />
         </View>
 
-        {view === 'week' ? (
-          <>
-            <Card style={{ marginBottom: space(4) }}>
-              <View style={styles.progHead}>
-                <Text style={styles.progTitle}>Crew progress</Text>
-                <Text style={styles.progNum}>
-                  {crew.targetHit} / {crew.targetTotal} check-ins
-                </Text>
-              </View>
-              <View style={styles.track}>
-                <View style={[styles.trackFill, { width: `${pct * 100}%` }]} />
-              </View>
-            </Card>
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          {TABS.map((t) => (
+            <Pressable key={t.key} onPress={() => { select(); setTab(t.key); }} style={styles.tab}>
+              <Text style={[styles.tabText, tab === t.key && styles.tabTextOn]}>{t.label}</Text>
+              {tab === t.key ? <View style={styles.tabUnderline} /> : null}
+            </Pressable>
+          ))}
+        </View>
 
+        {tab === 'members' && (
+          <View style={{ gap: space(3) }}>
             {crew.members.map((m) => (
-              <MemberRow
+              <MemberCard
                 key={m.profile.id}
                 member={m}
                 labels={labels}
-                target={crew.group.target_days_per_week}
+                target={target}
                 nudging={nudgingId === m.profile.id}
                 onNudge={() => nudge(m)}
               />
             ))}
+            <InviteCard code={crew.group.invite_code} onShare={shareCode} />
+          </View>
+        )}
 
-            <Pressable
-              onPress={shareCode}
-              style={({ pressed }) => [styles.invite, pressed && { opacity: 0.7 }]}
-            >
-              <Text style={styles.inviteLabel}>Invite code</Text>
-              <Text style={styles.inviteCode}>{crew.group.invite_code}</Text>
-              <Text style={styles.inviteHint}>Tap to share</Text>
-            </Pressable>
+        {tab === 'feed' && <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />}
 
-            <View style={styles.manage}>
-              {isOwner && (
-                <Pressable
-                  onPress={() => { setRenameValue(crew.group.name); setRenaming(true); }}
-                  style={styles.manageBtn}
-                >
-                  <Text style={styles.renameText}>Rename crew</Text>
-                </Pressable>
-              )}
-              <Pressable onPress={confirmLeave} style={styles.manageBtn}>
-                <Text style={styles.leaveText}>Leave crew</Text>
-              </Pressable>
-              {isOwner && (
-                <Pressable onPress={confirmDeleteCrew} style={styles.manageBtn}>
-                  <Text style={styles.deleteCrewText}>Delete crew</Text>
-                </Pressable>
-              )}
-            </View>
-          </>
-        ) : (
-          <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />
+        {tab === 'board' && <Board members={crew.members} target={target} />}
+
+        {tab === 'settings' && (
+          <SettingsTab
+            crew={crew}
+            isOwner={isOwner}
+            onRename={() => { setRenameValue(crew.group.name); setRenaming(true); }}
+            onShare={shareCode}
+            onLeave={confirmLeave}
+            onDelete={confirmDeleteCrew}
+          />
         )}
       </ScrollView>
 
@@ -362,6 +364,141 @@ function applyToggle(summary: ReactionSummary, emoji: string, wasMine: boolean):
   return { counts, mine };
 }
 
+function MemberCard({
+  member, labels, target, nudging, onNudge,
+}: {
+  member: CrewMember; labels: string[]; target: number; nudging: boolean; onNudge: () => void;
+}) {
+  const styles = useStyles();
+  const onTrack = member.daysHit >= target;
+  const behind = !onTrack && !member.isMe;
+  return (
+    <View style={styles.memberCard}>
+      <View style={styles.memberTop}>
+        <Avatar name={member.profile.display_name} color={colorFor(member.profile.id)} uri={member.profile.avatar_url} size={44} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.memberName}>{member.isMe ? 'You' : member.profile.display_name}</Text>
+          <Text style={[styles.memberStatus, onTrack ? styles.statusOk : styles.statusBehind]}>
+            {onTrack ? 'On track ✓' : 'Behind this week'}
+          </Text>
+        </View>
+        {behind ? (
+          <Pressable onPress={onNudge} disabled={nudging} style={[styles.nudge, nudging && { opacity: 0.55 }]}>
+            <Text style={styles.nudgeText}>{nudging ? 'Sending…' : 'Nudge 👋'}</Text>
+          </Pressable>
+        ) : member.streak > 0 ? (
+          <Text style={styles.flame}>🔥 {member.streak}</Text>
+        ) : null}
+      </View>
+      <View style={styles.week}>
+        {member.days.map((hit, i) => (
+          <View key={i} style={styles.dayCol}>
+            <View style={[styles.dot, hit && styles.dotHit]}>
+              {hit ? <Text style={styles.dotCheck}>✓</Text> : null}
+            </View>
+            <Text style={styles.dayLabel}>{labels[i]?.charAt(0)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function InviteCard({ code, onShare }: { code: string; onShare: () => void }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.invite}>
+      <Text style={styles.inviteTitle}>Invite your crew</Text>
+      <Text style={styles.inviteSub}>Share the code to add a member</Text>
+      <View style={styles.inviteRow}>
+        <Text style={styles.inviteCode}>{code}</Text>
+        <Pressable onPress={onShare} style={styles.inviteBtn}>
+          <Text style={styles.inviteBtnText}>Share</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function Board({ members, target }: { members: CrewMember[]; target: number }) {
+  const styles = useStyles();
+  const ranked = [...members].sort((a, b) => b.daysHit - a.daysHit || b.streak - a.streak);
+  const medals = ['🥇', '🥈', '🥉'];
+  const totalSessions = members.reduce((s, m) => s + m.daysHit, 0);
+  const avgStreak = members.length ? Math.round(members.reduce((s, m) => s + m.streak, 0) / members.length) : 0;
+
+  return (
+    <View style={{ gap: space(3) }}>
+      {ranked.map((m, i) => {
+        const pct = target > 0 ? Math.min(1, m.daysHit / target) : 0;
+        return (
+          <View key={m.profile.id} style={[styles.boardRow, i === 0 && styles.boardRowLead]}>
+            <Text style={styles.rank}>{medals[i] ?? `${i + 1}`}</Text>
+            <Avatar name={m.profile.display_name} color={colorFor(m.profile.id)} uri={m.profile.avatar_url} size={40} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.memberName}>{m.isMe ? 'You' : m.profile.display_name}</Text>
+              <Text style={styles.boardMeta}>{m.daysHit} this week · {m.streak} wk streak</Text>
+              <View style={styles.boardTrack}><View style={[styles.boardFill, { width: `${pct * 100}%` }]} /></View>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.boardNum}>{m.daysHit}</Text>
+              <Text style={styles.boardNumLabel}>check-ins</Text>
+            </View>
+          </View>
+        );
+      })}
+
+      <View style={styles.statsCard}>
+        <Text style={styles.statsTitle}>Crew stats this week</Text>
+        <View style={styles.statsRow}><Text style={styles.statsLabel}>🏋️ Total check-ins</Text><Text style={styles.statsVal}>{totalSessions}</Text></View>
+        <View style={styles.statsRow}><Text style={styles.statsLabel}>👥 Members</Text><Text style={styles.statsVal}>{members.length}</Text></View>
+        <View style={styles.statsRow}><Text style={styles.statsLabel}>🔥 Avg streak</Text><Text style={styles.statsVal}>{avgStreak} wk</Text></View>
+      </View>
+      <Text style={styles.boardNote}>Ranked by check-ins this week. XP &amp; medals get richer once the hours + XP features land.</Text>
+    </View>
+  );
+}
+
+function SettingsTab({
+  crew, isOwner, onRename, onShare, onLeave, onDelete,
+}: {
+  crew: CrewView; isOwner: boolean; onRename: () => void; onShare: () => void; onLeave: () => void; onDelete: () => void;
+}) {
+  const styles = useStyles();
+  return (
+    <View style={{ gap: space(3) }}>
+      <View style={styles.setGroup}>
+        <SettingRow label="Crew name" value={crew.group.name} onPress={isOwner ? onRename : undefined} />
+        <SettingRow label="Weekly goal" value={`${crew.group.target_days_per_week}× / week`} />
+        <SettingRow label="Invite code" value={crew.group.invite_code} onPress={onShare} action="Share" />
+      </View>
+      <View style={styles.setGroup}>
+        <Pressable onPress={onLeave} style={styles.setRow}>
+          <Text style={styles.leaveText}>Leave crew</Text>
+        </Pressable>
+        {isOwner && (
+          <Pressable onPress={onDelete} style={styles.setRow}>
+            <Text style={styles.deleteText}>Delete crew</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function SettingRow({ label, value, onPress, action }: { label: string; value: string; onPress?: () => void; action?: string }) {
+  const styles = useStyles();
+  return (
+    <Pressable onPress={onPress} disabled={!onPress} style={styles.setRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.setLabel}>{label}</Text>
+        <Text style={styles.setValue}>{value}</Text>
+      </View>
+      {onPress ? <Text style={styles.setAction}>{action ?? 'Edit'}</Text> : null}
+    </Pressable>
+  );
+}
+
 function Feed({ feed, onToggle, myUserId }: { feed: FeedItem[]; onToggle: (item: FeedItem, emoji: string) => void; myUserId?: string }) {
   const styles = useStyles();
   if (feed.length === 0) {
@@ -372,45 +509,32 @@ function Feed({ feed, onToggle, myUserId }: { feed: FeedItem[]; onToggle: (item:
       </View>
     );
   }
-
-  let lastDay = '';
   return (
-    <View>
-      {feed.map((item) => {
-        const showDay = item.local_date !== lastDay;
-        lastDay = item.local_date;
-        return (
-          <View key={item.id}>
-            {showDay && <Text style={styles.dayHeader}>{relativeDayLabel(item.local_date)}</Text>}
-            <FeedCard item={item} onToggle={onToggle} isMine={item.user_id === myUserId} />
-          </View>
-        );
-      })}
+    <View style={{ gap: space(3) }}>
+      <Text style={styles.feedIntro}>Recent check-ins</Text>
+      {feed.map((item) => (
+        <FeedCard key={item.id} item={item} onToggle={onToggle} isMine={item.user_id === myUserId} />
+      ))}
     </View>
   );
 }
 
 function FeedCard({ item, onToggle, isMine }: { item: FeedItem; onToggle: (item: FeedItem, emoji: string) => void; isMine?: boolean }) {
   const styles = useStyles();
-  const time = new Date(item.created_at).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
   return (
     <View style={styles.feedCard}>
       <View style={styles.feedTop}>
         <Avatar name={item.author.display_name} color={colorFor(item.author.id)} uri={item.author.avatar_url} size={38} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.feedName}>{isMine ? 'You' : item.author.display_name}</Text>
-          <Text style={styles.feedMeta}>
-            {ACTIVITY_LABEL[item.activity] ?? 'Moved'} · {time}
-          </Text>
-        </View>
+        <Text style={styles.feedName}>{isMine ? 'You' : item.author.display_name}</Text>
+        <Text style={styles.feedTime}>{timeAgo(item.created_at)}</Text>
+      </View>
+      <View style={styles.activityTag}>
+        <Text style={styles.activityTagText}>
+          {ACTIVITY_EMOJI[item.activity] ?? '✨'} {ACTIVITY_LABEL[item.activity] ?? 'Moved'}
+        </Text>
       </View>
       {item.note ? <Text style={styles.feedNote}>{item.note}</Text> : null}
-      {item.photo_url ? (
-        <Image source={{ uri: item.photo_url }} style={styles.feedPhoto} contentFit="cover" />
-      ) : null}
+      {item.photo_url ? <Image source={{ uri: item.photo_url }} style={styles.feedPhoto} contentFit="cover" /> : null}
       <View style={styles.reactionRow}>
         {REACTION_EMOJIS.map((emoji) => {
           const count = item.reactions.counts[emoji] ?? 0;
@@ -422,63 +546,11 @@ function FeedCard({ item, onToggle, isMine }: { item: FeedItem; onToggle: (item:
               style={({ pressed }) => [styles.reaction, mine && styles.reactionOn, pressed && { opacity: 0.6 }]}
             >
               <Text style={styles.reactionEmoji}>{emoji}</Text>
-              {count > 0 ? (
-                <Text style={[styles.reactionCount, mine && styles.reactionCountOn]}>{count}</Text>
-              ) : null}
+              {count > 0 ? <Text style={[styles.reactionCount, mine && styles.reactionCountOn]}>{count}</Text> : null}
             </Pressable>
           );
         })}
       </View>
-    </View>
-  );
-}
-
-function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  const styles = useStyles();
-  return (
-    <Pressable onPress={onPress} style={[styles.seg, active && styles.segOn]}>
-      <Text style={[styles.segText, active && styles.segTextOn]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function MemberRow({
-  member,
-  labels,
-  target,
-  nudging,
-  onNudge,
-}: {
-  member: CrewMember;
-  labels: string[];
-  target: number;
-  nudging: boolean;
-  onNudge: () => void;
-}) {
-  const styles = useStyles();
-  const behind = member.daysHit < target && !member.isMe;
-  return (
-    <View style={styles.row}>
-      <Avatar name={member.profile.display_name} color={colorFor(member.profile.id)} uri={member.profile.avatar_url} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.name}>{member.isMe ? 'You' : member.profile.display_name}</Text>
-        <View style={styles.week}>
-          {member.days.map((hit, i) => (
-            <View key={i} style={[styles.dot, hit && styles.dotHit]} />
-          ))}
-        </View>
-      </View>
-      {behind ? (
-        <Pressable
-          onPress={onNudge}
-          disabled={nudging}
-          style={[styles.nudge, nudging && { opacity: 0.55 }]}
-        >
-          <Text style={styles.nudgeText}>{nudging ? 'Sending…' : 'Nudge'}</Text>
-        </Pressable>
-      ) : member.streak > 0 ? (
-        <Text style={styles.streak}>{member.streak}🔥</Text>
-      ) : null}
     </View>
   );
 }
@@ -492,130 +564,101 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   empty: { color: colors.inkSoft, fontSize: 15, fontWeight: '600' },
-  scroll: { padding: space(6), paddingBottom: space(10) },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: space(4) },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
-  title: { fontSize: 28, fontWeight: '800', color: colors.ink, fontFamily: fonts.display, letterSpacing: -0.4 },
-  titleEdit: { fontSize: 12, fontWeight: '800', color: colors.coral, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sub: { fontSize: 13, color: colors.inkSoft, fontWeight: '600', marginTop: 2 },
-  segment: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface2,
-    borderRadius: radius.pill,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.line,
-    marginBottom: space(4),
-  },
-  seg: { flex: 1, paddingVertical: space(2.5), borderRadius: radius.pill, alignItems: 'center' },
-  segOn: { backgroundColor: colors.coral },
-  segText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
-  segTextOn: { color: colors.onCoral },
-  progHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: space(2.5),
-  },
-  progTitle: { fontSize: 15, fontWeight: '800', color: colors.ink },
-  progNum: { fontSize: 12, color: colors.inkSoft, fontWeight: '600' },
-  track: { height: 12, borderRadius: 8, backgroundColor: colors.mintBg, overflow: 'hidden' },
-  trackFill: { height: '100%', borderRadius: 8, backgroundColor: colors.mint },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space(3),
-    paddingVertical: space(3),
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  name: { fontSize: 15, fontWeight: '800', color: colors.ink },
-  week: { flexDirection: 'row', gap: space(1), marginTop: space(1.5) },
-  dot: { width: 12, height: 12, borderRadius: 4, backgroundColor: colors.line },
-  dotHit: { backgroundColor: colors.mint },
-  nudge: {
-    borderWidth: 1.5,
-    borderColor: colors.coral,
-    borderRadius: radius.pill,
-    paddingHorizontal: space(3),
-    paddingVertical: space(1.5),
-  },
-  nudgeText: { color: colors.coral, fontWeight: '800', fontSize: 12 },
-  streak: { fontSize: 15, fontWeight: '800', color: colors.gold },
-  invite: {
-    marginTop: space(5),
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.lg,
-    paddingVertical: space(4),
-    gap: space(1),
-  },
-  inviteLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.inkSoft,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  inviteCode: { fontSize: 28, fontWeight: '800', color: colors.ink, letterSpacing: 4 },
-  inviteHint: { fontSize: 12, color: colors.teal, fontWeight: '700' },
-  manage: { marginTop: space(5), alignItems: 'center', gap: space(1) },
-  manageBtn: { paddingVertical: space(2.5), alignItems: 'center' },
-  renameText: { fontSize: 14, fontWeight: '700', color: colors.coral },
-  leaveText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
-  deleteCrewText: { fontSize: 14, fontWeight: '700', color: colors.danger },
+  scroll: { padding: space(6), paddingBottom: space(12) },
+
+  eyebrow: { fontFamily: fonts.ui, fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: colors.inkFaint, textTransform: 'uppercase' },
+  headRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space(3), marginTop: space(1) },
+  title: { fontFamily: fonts.display, fontSize: 34, fontWeight: '800', color: colors.ink, letterSpacing: -0.6 },
+  count: { fontFamily: fonts.display, fontSize: 26, fontWeight: '800', color: colors.mint, letterSpacing: -0.5 },
+  countLabel: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, fontWeight: '700', marginTop: -2 },
+  track: { height: 6, borderRadius: 999, backgroundColor: colors.surface2, marginTop: space(3), overflow: 'hidden' },
+  trackFill: { height: '100%', borderRadius: 999, backgroundColor: colors.mint },
+
+  tabs: { flexDirection: 'row', gap: space(5), marginTop: space(5), marginBottom: space(5), borderBottomWidth: 1, borderBottomColor: colors.line },
+  tab: { paddingBottom: space(2.5), alignItems: 'center' },
+  tabText: { fontFamily: fonts.ui, fontSize: 14.5, fontWeight: '700', color: colors.inkFaint },
+  tabTextOn: { color: colors.ink },
+  tabUnderline: { position: 'absolute', bottom: -1, left: 0, right: 0, height: 2, borderRadius: 2, backgroundColor: colors.coral },
+
+  // member card
+  memberCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space(4), gap: space(3) },
+  memberTop: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
+  memberName: { fontFamily: fonts.display, fontSize: 16, fontWeight: '800', color: colors.ink, letterSpacing: -0.2 },
+  memberStatus: { fontFamily: fonts.ui, fontSize: 12.5, fontWeight: '700', marginTop: 1 },
+  statusOk: { color: colors.mint },
+  statusBehind: { color: colors.inkFaint },
+  nudge: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.coral, borderRadius: radius.pill, paddingHorizontal: space(3.5), paddingVertical: space(2) },
+  nudgeText: { color: colors.coral, fontWeight: '800', fontSize: 12.5, fontFamily: fonts.ui },
+  flame: { fontSize: 14, fontWeight: '800', color: colors.gold, fontFamily: fonts.ui },
+  week: { flexDirection: 'row', justifyContent: 'space-between' },
+  dayCol: { alignItems: 'center', gap: space(1.5) },
+  dot: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  dotHit: { backgroundColor: colors.mint, borderColor: colors.mint },
+  dotCheck: { color: colors.onCoral, fontSize: 13, fontWeight: '900' },
+  dayLabel: { fontSize: 10, color: colors.inkFaint, fontWeight: '700', fontFamily: fonts.ui },
+
+  // invite
+  invite: { backgroundColor: colors.coral, borderRadius: radius.lg, padding: space(4), gap: space(1) },
+  inviteTitle: { fontFamily: fonts.display, fontSize: 17, fontWeight: '800', color: colors.onCoral },
+  inviteSub: { fontFamily: fonts.ui, fontSize: 12.5, fontWeight: '600', color: colors.onCoral, opacity: 0.75 },
+  inviteRow: { flexDirection: 'row', alignItems: 'center', gap: space(2), marginTop: space(3), backgroundColor: 'rgba(0,0,0,0.14)', borderRadius: radius.md, padding: space(2), paddingLeft: space(4) },
+  inviteCode: { flex: 1, fontFamily: fonts.display, fontSize: 20, fontWeight: '800', letterSpacing: 1, color: colors.onCoral },
+  inviteBtn: { backgroundColor: colors.onCoral, borderRadius: radius.sm, paddingHorizontal: space(4), paddingVertical: space(2.5) },
+  inviteBtnText: { color: colors.coral, fontWeight: '800', fontSize: 13, fontFamily: fonts.ui },
+
+  // board
+  boardRow: { flexDirection: 'row', alignItems: 'center', gap: space(3), backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space(3.5) },
+  boardRowLead: { borderColor: colors.gold },
+  rank: { width: 24, textAlign: 'center', fontSize: 16, fontWeight: '800', color: colors.inkSoft, fontFamily: fonts.ui },
+  boardMeta: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint, fontWeight: '600', marginTop: 1 },
+  boardTrack: { height: 5, borderRadius: 999, backgroundColor: colors.surface2, marginTop: space(2), overflow: 'hidden' },
+  boardFill: { height: '100%', borderRadius: 999, backgroundColor: colors.gold },
+  boardNum: { fontFamily: fonts.display, fontSize: 20, fontWeight: '800', color: colors.ink },
+  boardNumLabel: { fontFamily: fonts.ui, fontSize: 10, color: colors.inkFaint, fontWeight: '700', marginTop: -2 },
+  statsCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space(4), gap: space(2), marginTop: space(1) },
+  statsTitle: { fontFamily: fonts.display, fontSize: 15, fontWeight: '800', color: colors.ink, marginBottom: space(1) },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statsLabel: { fontFamily: fonts.ui, fontSize: 14, color: colors.inkSoft, fontWeight: '600' },
+  statsVal: { fontFamily: fonts.display, fontSize: 16, fontWeight: '800', color: colors.ink },
+  boardNote: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint, textAlign: 'center', marginTop: space(1), lineHeight: 17 },
+
+  // settings
+  setGroup: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+  setRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space(4), paddingVertical: space(4), borderTopWidth: 1, borderTopColor: colors.line },
+  setLabel: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint, fontWeight: '700' },
+  setValue: { fontFamily: fonts.ui, fontSize: 15, color: colors.ink, fontWeight: '600', marginTop: 1 },
+  setAction: { fontFamily: fonts.ui, fontSize: 13, color: colors.coral, fontWeight: '800' },
+  leaveText: { fontFamily: fonts.ui, fontSize: 15, color: colors.inkSoft, fontWeight: '700' },
+  deleteText: { fontFamily: fonts.ui, fontSize: 15, color: colors.danger, fontWeight: '700' },
+
+  // feed
+  feedIntro: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkFaint, fontWeight: '700' },
+  feedEmpty: { alignItems: 'center', paddingVertical: space(10), gap: space(1) },
+  feedEmptyText: { fontFamily: fonts.display, color: colors.ink, fontSize: 17, fontWeight: '800' },
+  feedEmptySub: { color: colors.inkFaint, fontSize: 13, textAlign: 'center' },
+  feedCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space(4), gap: space(2.5) },
+  feedTop: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
+  feedName: { flex: 1, fontFamily: fonts.display, fontSize: 15, fontWeight: '800', color: colors.ink },
+  feedTime: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint, fontWeight: '600' },
+  activityTag: { alignSelf: 'flex-start', backgroundColor: colors.surface2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
+  activityTagText: { fontFamily: fonts.ui, fontSize: 12, fontWeight: '700', color: colors.inkSoft },
+  feedNote: { fontFamily: fonts.ui, fontSize: 14.5, color: colors.ink, lineHeight: 20 },
+  feedPhoto: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.surface2 },
+  reactionRow: { flexDirection: 'row', gap: space(2), marginTop: space(1) },
+  reaction: { flexDirection: 'row', alignItems: 'center', gap: space(1), backgroundColor: colors.surface2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
+  reactionOn: { backgroundColor: 'rgba(220,185,133,0.18)' },
+  reactionEmoji: { fontSize: 15 },
+  reactionCount: { fontFamily: fonts.ui, fontSize: 12, fontWeight: '800', color: colors.inkSoft },
+  reactionCountOn: { color: colors.coral },
+
+  // rename modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: space(6) },
   modalCard: { width: '100%', maxWidth: 380, backgroundColor: colors.surface, borderRadius: radius.lg, padding: space(5), gap: space(4) },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.ink },
+  modalTitle: { fontFamily: fonts.display, fontSize: 18, fontWeight: '800', color: colors.ink },
   modalInput: { borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface2, color: colors.ink, fontSize: 16, paddingHorizontal: space(4), paddingVertical: space(3) },
   modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: space(2) },
   modalBtn: { paddingVertical: space(2.5), paddingHorizontal: space(4), borderRadius: radius.md },
   modalCancel: { fontSize: 15, fontWeight: '700', color: colors.inkSoft },
   modalSave: { backgroundColor: colors.coral },
   modalSaveText: { fontSize: 15, fontWeight: '800', color: colors.onCoral },
-  // feed
-  dayHeader: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.inkSoft,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: space(4),
-    marginBottom: space(2),
-  },
-  feedCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.lg,
-    padding: space(3.5),
-    marginBottom: space(3),
-    gap: space(2.5),
-  },
-  feedTop: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
-  feedName: { fontSize: 15, fontWeight: '800', color: colors.ink },
-  feedMeta: { fontSize: 12.5, color: colors.inkSoft, fontWeight: '600', marginTop: 1 },
-  feedNote: { fontSize: 14, color: colors.ink, lineHeight: 20 },
-  feedPhoto: { width: '100%', height: 300, borderRadius: radius.md, backgroundColor: colors.surface2 },
-  reactionRow: { flexDirection: 'row', gap: space(2), flexWrap: 'wrap', marginTop: space(0.5) },
-  reaction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space(1),
-    paddingHorizontal: space(2.5),
-    paddingVertical: space(1.5),
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    borderColor: colors.line,
-    backgroundColor: colors.surface2,
-  },
-  reactionOn: { borderColor: colors.coral, backgroundColor: 'rgba(76,141,255,0.18)' },
-  reactionEmoji: { fontSize: 15 },
-  reactionCount: { fontSize: 13, fontWeight: '800', color: colors.inkSoft },
-  reactionCountOn: { color: colors.coral },
-  feedEmpty: { alignItems: 'center', paddingVertical: space(12), gap: space(2) },
-  feedEmptyText: { fontSize: 16, fontWeight: '800', color: colors.ink },
-  feedEmptySub: { fontSize: 13, color: colors.inkSoft, textAlign: 'center', maxWidth: 240 },
 });
