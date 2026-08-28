@@ -36,6 +36,8 @@ import { weekDayLabels } from '@/lib/date';
 import { inviteLink } from '@/lib/pending-join';
 import { select, tap } from '@/lib/haptics';
 import { Avatar, colorFor, CrewSwitcher } from '@/components/ui';
+import { CrewPet } from '@/components/CrewPet';
+import { type Mood } from '@/components/Milo';
 import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
 type Tab = 'members' | 'feed' | 'board' | 'settings';
@@ -259,6 +261,20 @@ export default function Crew() {
   const pct = total > 0 ? Math.min(1, today.inCount / total) : 0;
   const target = crew.group.target_days_per_week;
 
+  // The crew pet's vibe, from how today's going.
+  let petMood: Mood;
+  let petMessage: string;
+  if (total > 0 && today.inCount === total) {
+    petMood = 'pumped';
+    petMessage = 'The whole crew showed up today! 🔥';
+  } else if (today.inCount > 0) {
+    petMood = 'happy';
+    petMessage = `${today.inCount} of ${total} in today — keep it rolling.`;
+  } else {
+    petMood = 'worried';
+    petMessage = 'Nobody’s checked in yet today 👀';
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
@@ -296,6 +312,7 @@ export default function Crew() {
 
         {tab === 'members' && (
           <View style={{ gap: space(3) }}>
+            <CrewPet mood={petMood} message={petMessage} />
             {crew.members.map((m) => (
               <MemberCard
                 key={m.profile.id}
