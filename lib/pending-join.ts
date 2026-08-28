@@ -9,7 +9,7 @@ const KEY = 'huddle.pendingJoin';
 
 // Where shareable invite links point. Recipients open this in a browser even
 // without the app, so it's always the deployed web URL.
-const WEB_URL = 'https://gym-accountability-app.vercel.app';
+const WEB_URL = 'https://gymhud.app';
 
 export async function setPendingJoin(code: string): Promise<void> {
   try {
