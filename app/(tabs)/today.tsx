@@ -82,6 +82,7 @@ export default function Today() {
   const [week, setWeek] = useState<WeekStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState<Activity>('gym');
+  const [duration, setDuration] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -124,6 +125,7 @@ export default function Today() {
 
   useEffect(() => {
     setActivity('gym');
+    setDuration(null);
     setNote('');
     setPhoto(null);
   }, [group?.id]);
@@ -192,6 +194,7 @@ export default function Today() {
         activity,
         note,
         photoUri: photo,
+        durationMin: duration,
         lat: loc.status === 'granted' ? loc.lat : null,
         lng: loc.status === 'granted' ? loc.lng : null,
         locationGranted: loc.status === 'granted',
@@ -200,6 +203,7 @@ export default function Today() {
       setCheckIn(ci);
       setPhoto(null);
       setNote('');
+      setDuration(null);
       const [st, wk] = await Promise.all([getTodayStatus(group.id), getMyWeekStatus(group, user.id)]);
       setStatus(st);
       setWeek(wk);
@@ -314,6 +318,24 @@ export default function Today() {
               ))}
             </View>
 
+            <Text style={styles.durationLabel}>How long? (optional)</Text>
+            <View style={styles.chips}>
+              {[30, 45, 60, 90].map((min) => {
+                const on = duration === min;
+                return (
+                  <Pressable
+                    key={min}
+                    onPress={() => { select(); setDuration(on ? null : min); }}
+                    style={[styles.chip, on && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                      {min === 90 ? '1h 30m' : min === 60 ? '1h' : `${min}m`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
             <TextInput
               value={note}
               onChangeText={setNote}
@@ -414,6 +436,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   prompt: { fontSize: 19, fontWeight: '800', color: colors.ink, textAlign: 'center', fontFamily: fonts.display },
   checkingInto: { fontSize: 12, color: colors.teal, fontWeight: '700', textAlign: 'center', marginBottom: space(4) },
+  durationLabel: { fontSize: 12, color: colors.inkFaint, fontWeight: '700', textAlign: 'center', marginTop: space(4), marginBottom: space(2), fontFamily: fonts.ui },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space(2), justifyContent: 'center' },
   chip: { borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: space(4), paddingVertical: space(2.5), backgroundColor: colors.surface },
   chipOn: { backgroundColor: colors.coral, borderColor: colors.coral },

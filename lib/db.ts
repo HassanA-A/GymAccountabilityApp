@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
-import { todayLocal, weekDates } from './date';
+import { todayLocal, weekDates, weekDayLabels } from './date';
 
 export type Activity = 'gym' | 'run' | 'lift' | 'other';
 
@@ -34,6 +34,7 @@ export type CheckIn = {
   lat: number | null;
   lng: number | null;
   location_granted: boolean | null;
+  duration_min: number | null;
 };
 
 export type CrewMember = {
@@ -268,6 +269,7 @@ export async function createCheckIn(opts: {
   lat?: number | null;
   lng?: number | null;
   locationGranted?: boolean | null;
+  durationMin?: number | null;
 }): Promise<CheckIn> {
   let photo_url: string | null = null;
   if (opts.photoUri) {
@@ -285,6 +287,7 @@ export async function createCheckIn(opts: {
       lat: opts.lat ?? null,
       lng: opts.lng ?? null,
       location_granted: opts.locationGranted ?? null,
+      duration_min: opts.durationMin ?? null,
     })
     .select('*')
     .single();
@@ -392,6 +395,63 @@ export async function getCrew(group: Group, myUserId: string): Promise<CrewView>
     members,
     targetHit,
     targetTotal: members.length * group.target_days_per_week,
+  };
+}
+
+export type MyStats = {
+  sessions: number;
+  hours: number; // total in the window, one decimal
+  streak: number;
+  weekly: { label: string; hours: number }[]; // last 4 weeks, oldest → newest
+  byType: { activity: Activity; sessions: number }[];
+  byDay: { label: string; sessions: number }[]; // ordered by the crew's week
+};
+
+const ACTIVITIES: Activity[] = ['gym', 'run', 'lift', 'other'];
+
+/** Aggregate the signed-in user's recent check-ins in a crew for the You tab. */
+export async function getMyStats(userId: string, group: Group): Promise<MyStats> {
+  // Four crew-weeks back, oldest first.
+  const weeks = [] as { label: string; dates: Set<string>; hours: number }[];
+  for (let w = 3; w >= 0; w--) {
+    const ref = new Date();
+    ref.setDate(ref.getDate() - w * 7);
+    weeks.push({ label: `Week ${4 - w}`, dates: new Set(weekDates(group.week_start_dow, ref)), hours: 0 });
+  }
+  const windowStart = [...weeks[0].dates].sort()[0];
+
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select('local_date, activity, duration_min')
+    .eq('user_id', userId)
+    .eq('group_id', group.id)
+    .gte('local_date', windowStart);
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as { local_date: string; activity: Activity; duration_min: number | null }[];
+  const typeCount: Record<Activity, number> = { gym: 0, run: 0, lift: 0, other: 0 };
+  const dayLabels = weekDayLabels(group.week_start_dow);
+  const dayCount = new Array(7).fill(0) as number[];
+  let totalMin = 0;
+
+  for (const r of rows) {
+    totalMin += r.duration_min ?? 0;
+    if (r.activity in typeCount) typeCount[r.activity] += 1;
+    const wk = weeks.find((x) => x.dates.has(r.local_date));
+    if (wk) wk.hours += (r.duration_min ?? 0) / 60;
+    const dayIdx = weekDates(group.week_start_dow, new Date(`${r.local_date}T12:00:00`)).indexOf(r.local_date);
+    if (dayIdx >= 0) dayCount[dayIdx] += 1;
+  }
+
+  const streak = await getStreak(userId, group.id);
+
+  return {
+    sessions: rows.length,
+    hours: Math.round((totalMin / 60) * 10) / 10,
+    streak,
+    weekly: weeks.map((w) => ({ label: w.label, hours: Math.round(w.hours * 10) / 10 })),
+    byType: ACTIVITIES.map((a) => ({ activity: a, sessions: typeCount[a] })).filter((t) => t.sessions > 0),
+    byDay: dayLabels.map((label, i) => ({ label, sessions: dayCount[i] })),
   };
 }
 

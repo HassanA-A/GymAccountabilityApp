@@ -15,7 +15,7 @@ const TAGS = `
     <link rel="apple-touch-icon" href="/icon-panda.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400..800&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Figtree:wght@400;500;600;700;800&display=swap" />
     <style>
       html, body, #root { font-family: 'Figtree', system-ui, -apple-system, sans-serif; background: #0E0D0C; }
     </style>
