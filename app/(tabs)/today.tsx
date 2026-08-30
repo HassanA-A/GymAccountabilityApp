@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,8 +20,10 @@ import { useActiveGroup } from '@/lib/active-group';
 import { confirmAction, showMessage } from '@/lib/dialog';
 import {
   createCheckIn,
+  createCheckInsMulti,
   getIncomingNudges,
   getMyWeekStatus,
+  getTodayCheckedGroups,
   getTodayCheckIn,
   getTodayStatus,
   markNudgesSeen,
@@ -74,7 +77,7 @@ function miloState(done: boolean, w: WeekStatus | null): { mood: Mood; line: str
 
 export default function Today() {
   const { user } = useAuth();
-  const { activeGroup: group, loading: groupsLoading, refreshGroups } = useActiveGroup();
+  const { activeGroup: group, groups, loading: groupsLoading, refreshGroups } = useActiveGroup();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [checkIn, setCheckIn] = useState<CheckIn | null>(null);
@@ -90,6 +93,9 @@ export default function Today() {
   const [celebrate, setCelebrate] = useState(false);
   const [celebrateStreak, setCelebrateStreak] = useState(0);
   const [nudges, setNudges] = useState<IncomingNudge[]>([]);
+  const [checkedToday, setCheckedToday] = useState<string[]>([]);
+  const [postModal, setPostModal] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
 
   useFocusEffect(useCallback(() => {
     refreshGroups();
@@ -108,14 +114,16 @@ export default function Today() {
     setRefreshing(true);
     try {
       await refreshGroups();
-      const [ci, st, wk] = await Promise.all([
+      const [ci, st, wk, checked] = await Promise.all([
         getTodayCheckIn(group.id, user.id),
         getTodayStatus(group.id),
         getMyWeekStatus(group, user.id),
+        getTodayCheckedGroups(user.id),
       ]);
       setCheckIn(ci);
       setStatus(st);
       setWeek(wk);
+      setCheckedToday(checked);
     } catch {
       // A pull-to-refresh failing silently is fine; the next load will retry.
     } finally {
@@ -146,12 +154,14 @@ export default function Today() {
       getTodayCheckIn(group.id, user.id),
       getTodayStatus(group.id),
       getMyWeekStatus(group, user.id),
+      getTodayCheckedGroups(user.id),
     ])
-      .then(([ci, st, wk]) => {
+      .then(([ci, st, wk, checked]) => {
         if (!current) return;
         setCheckIn(ci);
         setStatus(st);
         setWeek(wk);
+        setCheckedToday(checked);
       })
       .catch((error) => {
         if (current) showMessage('Could not load today', error instanceof Error ? error.message : 'Please try again.');
@@ -180,16 +190,35 @@ export default function Today() {
     if (!res.canceled) setPhoto(res.assets[0].uri);
   }
 
-  async function submit() {
+  // Tapping "I showed up": with one crew, post straight away; with several,
+  // open a menu to pick which crews to post to.
+  function onShowUp() {
     if (!group || !user) return;
+    const others = groups.filter((g) => g.id !== group.id);
+    if (others.length === 0) {
+      doCheckIn([group.id]);
+      return;
+    }
+    // Preselect every crew you haven't already checked into today.
+    setSelected(groups.filter((g) => !checkedToday.includes(g.id)).map((g) => g.id));
+    setPostModal(true);
+  }
+
+  async function doCheckIn(groupIds: string[]) {
+    if (!user || !group) return;
+    // Skip crews already checked into today (avoids a duplicate error).
+    const targets = groupIds.filter((id) => !checkedToday.includes(id));
+    if (targets.length === 0) {
+      showMessage('Already checked in', 'You’ve already checked into those crews today.');
+      return;
+    }
+    setPostModal(false);
     tap();
     setSubmitting(true);
     try {
-      // Try to confirm they're actually out moving. Never block the check-in on
-      // it — a denied/unavailable fix just logs without coordinates.
+      // Confirm they're actually out moving — never block the check-in on it.
       const loc = await getCheckInLocation();
-      const ci = await createCheckIn({
-        groupId: group.id,
+      const created = await createCheckInsMulti(targets, {
         userId: user.id,
         activity,
         note,
@@ -200,15 +229,23 @@ export default function Today() {
         locationGranted: loc.status === 'granted',
       });
       success();
-      setCheckIn(ci);
       setPhoto(null);
       setNote('');
       setDuration(null);
-      const [st, wk] = await Promise.all([getTodayStatus(group.id), getMyWeekStatus(group, user.id)]);
-      setStatus(st);
-      setWeek(wk);
-      setCelebrateStreak(wk.streak);
-      setCelebrate(true);
+      setCheckedToday((prev) => [...prev, ...targets]);
+
+      const mine = created.find((c) => c.group_id === group.id) ?? null;
+      if (mine) {
+        // Active crew was one of the targets — show its done state + celebrate.
+        setCheckIn(mine);
+        const [st, wk] = await Promise.all([getTodayStatus(group.id), getMyWeekStatus(group, user.id)]);
+        setStatus(st);
+        setWeek(wk);
+        setCelebrateStreak(wk.streak);
+        setCelebrate(true);
+      } else {
+        showMessage('Checked in 💪', `Posted to ${targets.length} ${targets.length === 1 ? 'crew' : 'crews'}.`);
+      }
     } catch (error) {
       showMessage('Could not check in', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -362,7 +399,7 @@ export default function Today() {
             )}
 
             <View style={{ height: space(2) }} />
-            <PrimaryButton label="I showed up" onPress={submit} loading={submitting} icon={<CheckIcon />} />
+            <PrimaryButton label="I showed up" onPress={onShowUp} loading={submitting} icon={<CheckIcon />} />
           </Card>
         )}
 
@@ -376,6 +413,52 @@ export default function Today() {
         streak={celebrateStreak}
         onDone={() => setCelebrate(false)}
       />
+
+      <Modal visible={postModal} transparent animationType="fade" onRequestClose={() => setPostModal(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setPostModal(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Post to which crews?</Text>
+            <Text style={styles.modalSub}>Your check-in goes to every crew you pick.</Text>
+            <View style={{ marginTop: space(2) }}>
+              {groups.map((g) => {
+                const already = checkedToday.includes(g.id);
+                const on = selected.includes(g.id);
+                return (
+                  <Pressable
+                    key={g.id}
+                    disabled={already}
+                    onPress={() => {
+                      select();
+                      setSelected((prev) => (prev.includes(g.id) ? prev.filter((x) => x !== g.id) : [...prev, g.id]));
+                    }}
+                    style={[styles.postRow, already && { opacity: 0.5 }]}
+                  >
+                    <View style={[styles.check, (on || already) && styles.checkOn]}>
+                      {(on || already) ? <Text style={styles.checkMark}>✓</Text> : null}
+                    </View>
+                    <Text style={styles.postName}>{g.name}</Text>
+                    {already ? <Text style={styles.postAlready}>Already in</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.modalRow}>
+              <Pressable onPress={() => setPostModal(false)} style={styles.modalBtn}>
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => doCheckIn(selected)}
+                disabled={selected.filter((id) => !checkedToday.includes(id)).length === 0}
+                style={[styles.modalBtn, styles.modalPost, selected.filter((id) => !checkedToday.includes(id)).length === 0 && { opacity: 0.5 }]}
+              >
+                <Text style={styles.modalPostText}>
+                  Post to {selected.filter((id) => !checkedToday.includes(id)).length}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -476,4 +559,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   undoText: { color: colors.inkSoft, fontWeight: '600', fontSize: 14 },
   crewLine: { textAlign: 'center', color: colors.inkSoft, fontSize: 14, marginTop: space(5) },
   crewCount: { color: colors.mint, fontWeight: '800' },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: space(6) },
+  modalCard: { width: '100%', maxWidth: 400, backgroundColor: colors.surface, borderRadius: radius.lg, padding: space(5) },
+  modalTitle: { fontFamily: fonts.display, fontSize: 19, fontWeight: '800', color: colors.ink },
+  modalSub: { fontSize: 13, color: colors.inkSoft, fontWeight: '600', marginTop: 2 },
+  postRow: { flexDirection: 'row', alignItems: 'center', gap: space(3), paddingVertical: space(3) },
+  check: { width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  checkOn: { backgroundColor: colors.coral, borderColor: colors.coral },
+  checkMark: { color: colors.onCoral, fontSize: 14, fontWeight: '900' },
+  postName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.ink, fontFamily: fonts.ui },
+  postAlready: { fontSize: 12, color: colors.mint, fontWeight: '800', fontFamily: fonts.ui },
+  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: space(2), marginTop: space(4) },
+  modalBtn: { paddingVertical: space(2.5), paddingHorizontal: space(4), borderRadius: radius.md },
+  modalCancel: { fontSize: 15, fontWeight: '700', color: colors.inkSoft },
+  modalPost: { backgroundColor: colors.coral },
+  modalPostText: { fontSize: 15, fontWeight: '800', color: colors.onCoral },
 });

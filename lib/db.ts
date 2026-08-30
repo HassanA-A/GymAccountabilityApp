@@ -295,6 +295,54 @@ export async function createCheckIn(opts: {
   return data as CheckIn;
 }
 
+/** Which of the user's crews they've already checked into today. */
+export async function getTodayCheckedGroups(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select('group_id')
+    .eq('user_id', userId)
+    .eq('local_date', todayLocal());
+  if (error) return [];
+  return ((data ?? []) as { group_id: string }[]).map((r) => r.group_id);
+}
+
+/** Post the same check-in to several crews at once (photo uploaded once). */
+export async function createCheckInsMulti(
+  groupIds: string[],
+  opts: {
+    userId: string;
+    activity: Activity;
+    note?: string;
+    photoUri?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    locationGranted?: boolean | null;
+    durationMin?: number | null;
+  }
+): Promise<CheckIn[]> {
+  if (groupIds.length === 0) return [];
+  let photo_url: string | null = null;
+  if (opts.photoUri) {
+    photo_url = await uploadImage('check-ins', `${opts.userId}/checkin`, opts.photoUri);
+  }
+  const local_date = todayLocal();
+  const rows = groupIds.map((group_id) => ({
+    group_id,
+    user_id: opts.userId,
+    local_date,
+    activity: opts.activity,
+    note: opts.note?.trim() || null,
+    photo_url,
+    lat: opts.lat ?? null,
+    lng: opts.lng ?? null,
+    location_granted: opts.locationGranted ?? null,
+    duration_min: opts.durationMin ?? null,
+  }));
+  const { data, error } = await supabase.from('check_ins').insert(rows).select('*');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CheckIn[];
+}
+
 export async function undoTodayCheckIn(checkInId: string): Promise<void> {
   const { error } = await supabase.from('check_ins').delete().eq('id', checkInId);
   if (error) throw new Error(error.message);
