@@ -4,19 +4,9 @@ import { Milo, type Mood } from './Milo';
 import { tap } from '@/lib/haptics';
 import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
-// The crew's shared pet. It idles (breathes + bobs), you can tap to pet it
-// (bounce + hearts + haptic), it has passing thoughts, and its little world
-// changes with the time of day. Mood + message come from how the crew is doing.
-
-type Scene = { key: 'morning' | 'day' | 'evening' | 'night'; bg: string; glow: string; icon: string };
-
-function sceneForHour(h: number): Scene {
-  if (h < 6) return { key: 'night', bg: '#131A2C', glow: '#2A3358', icon: '🌙' };
-  if (h < 12) return { key: 'morning', bg: '#2B2117', glow: '#6B4E28', icon: '🌅' };
-  if (h < 18) return { key: 'day', bg: '#1E2620', glow: '#3E5233', icon: '☀️' };
-  if (h < 22) return { key: 'evening', bg: '#281B23', glow: '#553040', icon: '🌆' };
-  return { key: 'night', bg: '#131A2C', glow: '#2A3358', icon: '🌙' };
-}
+// The crew's shared pet, sitting right on the page (no floating card). It has a
+// barely-there idle sway, you can tap to pet it (bounce + hearts + haptic), and
+// it has passing thoughts. Mood + message come from how the crew is doing.
 
 const THOUGHTS: Record<Mood, string[]> = {
   pumped: ['let’s GO 🔥', 'crew’s unstoppable 💪', 'so proud rn'],
@@ -30,7 +20,6 @@ type Heart = { id: number; x: number; v: Animated.Value };
 export function CrewPet({ mood, message }: { mood: Mood; message: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const scene = useMemo(() => sceneForHour(new Date().getHours()), []);
 
   const idle = useRef(new Animated.Value(0)).current;
   const petAnim = useRef(new Animated.Value(0)).current;
@@ -39,22 +28,21 @@ export function CrewPet({ mood, message }: { mood: Mood; message: string }) {
   const heartId = useRef(0);
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Idle breathing + bob.
+  // Very subtle idle sway.
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(idle, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(idle, { toValue: 0, duration: 1900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(idle, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(idle, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
     loop.start();
     return () => loop.stop();
   }, [idle]);
 
-  // A passing thought every so often.
   useEffect(() => {
     const t = setInterval(() => showThought(), 11000);
-    const first = setTimeout(() => showThought(), 1200);
+    const first = setTimeout(() => showThought(), 1400);
     return () => { clearInterval(t); clearTimeout(first); if (bubbleTimer.current) clearTimeout(bubbleTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mood]);
@@ -81,28 +69,18 @@ export function CrewPet({ mood, message }: { mood: Mood; message: string }) {
     spawnHeart();
     showThought();
     Animated.sequence([
-      Animated.spring(petAnim, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 20 }),
-      Animated.spring(petAnim, { toValue: 0, useNativeDriver: true, speed: 18, bounciness: 10 }),
+      Animated.spring(petAnim, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 18 }),
+      Animated.spring(petAnim, { toValue: 0, useNativeDriver: true, speed: 18, bounciness: 8 }),
     ]).start();
   }
 
-  const translateY = idle.interpolate({ inputRange: [0, 1], outputRange: [5, -7] });
-  const breathe = idle.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] });
-  const petScale = petAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.13] });
-  const petRotate = petAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '4deg'] });
+  const translateY = idle.interpolate({ inputRange: [0, 1], outputRange: [1.5, -2.5] });
+  const breathe = idle.interpolate({ inputRange: [0, 1], outputRange: [1, 1.012] });
+  const petScale = petAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] });
+  const petRotate = petAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '3deg'] });
 
   return (
-    <View style={[styles.card, { backgroundColor: scene.bg }]}>
-      <View style={[styles.glow, { backgroundColor: scene.glow }]} />
-      <Text style={styles.sceneIcon}>{scene.icon}</Text>
-      {scene.key === 'night' && (
-        <>
-          <View style={[styles.star, { top: 18, left: 34 }]} />
-          <View style={[styles.star, { top: 40, left: 90, opacity: 0.6 }]} />
-          <View style={[styles.star, { top: 26, right: 70, opacity: 0.8 }]} />
-        </>
-      )}
-
+    <View style={styles.wrap}>
       {bubble ? (
         <View style={styles.bubble}>
           <Text style={styles.bubbleText}>{bubble}</Text>
@@ -112,7 +90,7 @@ export function CrewPet({ mood, message }: { mood: Mood; message: string }) {
 
       <Pressable onPress={pet} style={styles.petZone} accessibilityRole="button" accessibilityLabel="Pet the crew mascot">
         <Animated.View style={{ transform: [{ translateY }, { scale: Animated.multiply(breathe, petScale) }, { rotate: petRotate }] }}>
-          <Milo mood={mood} size={132} />
+          <Milo mood={mood} size={128} />
         </Animated.View>
         {hearts.map((h) => {
           const ty = h.v.interpolate({ inputRange: [0, 1], outputRange: [0, -70] });
@@ -133,23 +111,12 @@ export function CrewPet({ mood, message }: { mood: Mood; message: string }) {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  card: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    paddingVertical: space(5),
-    paddingHorizontal: space(4),
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  glow: { position: 'absolute', width: 200, height: 200, borderRadius: 100, opacity: 0.35, top: 30 },
-  sceneIcon: { position: 'absolute', top: 14, right: 16, fontSize: 22 },
-  star: { position: 'absolute', width: 3, height: 3, borderRadius: 2, backgroundColor: '#FFFFFF', opacity: 0.9 },
-  petZone: { alignItems: 'center', justifyContent: 'center', height: 148 },
+  wrap: { alignItems: 'center', paddingTop: space(1), paddingBottom: space(2) },
+  petZone: { alignItems: 'center', justifyContent: 'center', height: 138 },
   heart: { position: 'absolute', fontSize: 20 },
   bubble: {
     position: 'absolute',
-    top: 10,
+    top: 0,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
@@ -160,6 +127,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   bubbleText: { fontFamily: fonts.ui, fontSize: 12.5, fontWeight: '700', color: colors.ink },
   bubbleTail: { position: 'absolute', bottom: -5, left: 18, width: 10, height: 10, backgroundColor: colors.surface, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.line, transform: [{ rotate: '45deg' }] },
-  message: { fontFamily: fonts.display, fontSize: 15, fontWeight: '800', color: '#F4EEE4', textAlign: 'center', marginTop: space(2), letterSpacing: -0.2 },
-  hint: { fontFamily: fonts.ui, fontSize: 11, color: 'rgba(244,238,228,0.5)', fontWeight: '700', marginTop: space(1) },
+  message: { fontFamily: fonts.display, fontSize: 15, fontWeight: '800', color: colors.ink, textAlign: 'center', marginTop: space(1), letterSpacing: -0.2 },
+  hint: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, fontWeight: '700', marginTop: space(1) },
 });
