@@ -40,7 +40,7 @@
       [
         "expo-notifications",
         {
-          "color": "#FF6A3D",
+          "color": "#DCB985",
           "defaultChannel": "nudges"
         }
       ],

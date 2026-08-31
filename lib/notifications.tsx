@@ -24,7 +24,7 @@ async function registerForPushNotifications(userId: string) {
       name: 'Crew nudges',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 180, 120, 180],
-      lightColor: '#FF6A3D',
+      lightColor: '#DCB985',
     });
   }
 
