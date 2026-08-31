@@ -82,12 +82,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
         if (result.type !== 'success') return { error: null }; // user dismissed
 
-        const code = new URL(result.url).searchParams.get('code');
+        const url = result.url;
+        // PKCE flow returns ?code=… ; implicit flow returns #access_token=…
+        const code = new URL(url).searchParams.get('code');
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           return { error: exchangeError?.message ?? null };
         }
-        return { error: null };
+        const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
+        const params = new URLSearchParams(fragment);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        if (access_token && refresh_token) {
+          const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+          return { error: sessionError?.message ?? null };
+        }
+        return { error: 'Sign-in didn’t complete. Please try again.' };
       } catch (e) {
         return { error: e instanceof Error ? e.message : 'Google sign-in failed.' };
       }
