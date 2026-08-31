@@ -18,7 +18,8 @@
       "bundleIdentifier": "app.gymhud.huddle",
       "infoPlist": {
         "NSCameraUsageDescription": "Huddle uses your camera so you can snap a photo when you check in.",
-        "NSPhotoLibraryUsageDescription": "Huddle lets you attach a photo from your library to a check-in."
+        "NSPhotoLibraryUsageDescription": "Huddle lets you attach a photo from your library to a check-in.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -28,7 +29,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -51,6 +55,12 @@
           "cameraPermission": "Huddle uses your camera so you can snap a photo when you check in."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "81bfe8d4-c8f5-4729-9ef1-5e03b694116a"
+      }
+    }
   }
 }
