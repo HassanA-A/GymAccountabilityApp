@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.huddle.app",
+      "bundleIdentifier": "app.gymhud.huddle",
       "infoPlist": {
         "NSCameraUsageDescription": "Huddle uses your camera so you can snap a photo when you check in.",
         "NSPhotoLibraryUsageDescription": "Huddle lets you attach a photo from your library to a check-in."
       }
     },
     "android": {
-      "package": "com.huddle.app",
+      "package": "app.gymhud.huddle",
       "adaptiveIcon": {
         "backgroundColor": "#0E0D0C",
         "foregroundImage": "./assets/android-icon-foreground.png",
