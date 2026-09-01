@@ -8,6 +8,13 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Mount every tab at launch (not on first tap) so each screen loads
+        // its data in the background. Tapping Crew or You is then instant
+        // instead of showing a spinner the first time.
+        lazy: false,
+        // Pause off-screen tabs (and their animations, like the crew pet) so
+        // keeping them mounted doesn't cost battery while you're elsewhere.
+        freezeOnBlur: true,
         tabBarActiveTintColor: colors.coral,
         tabBarInactiveTintColor: colors.inkFaint,
         tabBarStyle: {
