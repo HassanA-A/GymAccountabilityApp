@@ -19,6 +19,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Huddle uses your camera so you can snap a photo when you check in.",
         "NSPhotoLibraryUsageDescription": "Huddle lets you attach a photo from your library to a check-in.",
+        "NSMotionUsageDescription": "Huddle reads your step count so crews that turn on step tracking can see how much everyone walked.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -53,6 +54,12 @@
         {
           "photosPermission": "Huddle lets you attach a photo from your library to a check-in.",
           "cameraPermission": "Huddle uses your camera so you can snap a photo when you check in."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Huddle reads your step count so crews that turn on step tracking can see how much everyone walked."
         }
       ]
     ],

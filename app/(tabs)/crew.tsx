@@ -7,6 +7,7 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -20,18 +21,22 @@ import { confirmAction, showMessage } from '@/lib/dialog';
 import {
   deleteGroup,
   getCrew,
+  getCrewSteps,
   getFeed,
   getTodayStatus,
   leaveGroup,
   renameGroup,
   sendNudge,
+  setStepsEnabled,
   toggleReaction,
   REACTION_EMOJIS,
   type CrewMember,
   type CrewView,
   type FeedItem,
+  type MemberSteps,
   type ReactionSummary,
 } from '@/lib/db';
+import { syncMySteps } from '@/lib/steps';
 import { weekDayLabels } from '@/lib/date';
 import { inviteLink } from '@/lib/pending-join';
 import { select, tap } from '@/lib/haptics';
@@ -40,13 +45,13 @@ import { CrewPet } from '@/components/CrewPet';
 import { type Mood } from '@/components/Milo';
 import { fonts, radius, space, useTheme, type ThemeColors } from '@/lib/theme';
 
-type Tab = 'members' | 'feed' | 'board' | 'settings';
-const TABS: { key: Tab; label: string }[] = [
+type Tab = 'members' | 'feed' | 'board' | 'steps' | 'settings';
+const BASE_TABS: { key: Tab; label: string }[] = [
   { key: 'members', label: 'Members' },
   { key: 'feed', label: 'Feed' },
   { key: 'board', label: 'Board' },
-  { key: 'settings', label: 'Settings' },
 ];
+const SETTINGS_TAB: { key: Tab; label: string } = { key: 'settings', label: 'Settings' };
 
 const ACTIVITY_LABEL: Record<string, string> = { gym: 'Gym', run: 'Run', lift: 'Lift', other: 'Moved' };
 const ACTIVITY_EMOJI: Record<string, string> = { gym: '💪', run: '🏃', lift: '🏋️', other: '✨' };
@@ -72,7 +77,9 @@ export default function Crew() {
   const [crew, setCrew] = useState<CrewView | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [today, setToday] = useState({ inCount: 0, total: 0 });
+  const [steps, setSteps] = useState<MemberSteps[]>([]);
   const [tab, setTab] = useState<Tab>('members');
+  const [savingSteps, setSavingSteps] = useState(false);
   const [loading, setLoading] = useState(true);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -84,7 +91,7 @@ export default function Crew() {
   // Per-crew snapshot cache so switching crews swaps instantly instead of
   // flashing a spinner. We keep whatever's on screen while the newly-selected
   // crew loads in the background, then swap it in (stale-while-revalidate).
-  const cacheRef = useRef<Map<string, { crew: CrewView; feed: FeedItem[]; today: { inCount: number; total: number } }>>(new Map());
+  const cacheRef = useRef<Map<string, { crew: CrewView; feed: FeedItem[]; today: { inCount: number; total: number }; steps: MemberSteps[] }>>(new Map());
   const crewRef = useRef<CrewView | null>(null);
   useEffect(() => { crewRef.current = crew; }, [crew]);
 
@@ -115,15 +122,17 @@ export default function Crew() {
 
   const load = useCallback(async () => {
     if (!user || !activeGroup) return;
-    const [nextCrew, nextFeed, nextToday] = await Promise.all([
+    const [nextCrew, nextFeed, nextToday, nextSteps] = await Promise.all([
       getCrew(activeGroup, user.id),
       getFeed(activeGroup.id, user.id),
       getTodayStatus(activeGroup.id),
+      activeGroup.steps_enabled ? getCrewSteps(activeGroup, user.id) : Promise.resolve([]),
     ]);
-    cacheRef.current.set(activeGroup.id, { crew: nextCrew, feed: nextFeed, today: nextToday });
+    cacheRef.current.set(activeGroup.id, { crew: nextCrew, feed: nextFeed, today: nextToday, steps: nextSteps });
     setCrew(nextCrew);
     setFeed(nextFeed);
     setToday(nextToday);
+    setSteps(nextSteps);
   }, [user, activeGroup]);
 
   const onRefresh = useCallback(async () => {
@@ -154,6 +163,7 @@ export default function Crew() {
       setCrew(cached.crew);
       setFeed(cached.feed);
       setToday(cached.today);
+      setSteps(cached.steps);
       setLoading(false);
     } else if (!crewRef.current) {
       // Nothing on screen yet: only now is a spinner warranted.
@@ -179,12 +189,13 @@ export default function Crew() {
         if (cancelled) return;
         if (g.id === activeGroup?.id || cacheRef.current.has(g.id)) continue;
         try {
-          const [c, f, t] = await Promise.all([
+          const [c, f, t, s] = await Promise.all([
             getCrew(g, user.id),
             getFeed(g.id, user.id),
             getTodayStatus(g.id),
+            g.steps_enabled ? getCrewSteps(g, user.id) : Promise.resolve([]),
           ]);
-          if (!cancelled) cacheRef.current.set(g.id, { crew: c, feed: f, today: t });
+          if (!cancelled) cacheRef.current.set(g.id, { crew: c, feed: f, today: t, steps: s });
         } catch {
           // Prefetch is best-effort; the real switch will load it for sure.
         }
@@ -192,6 +203,44 @@ export default function Crew() {
     })();
     return () => { cancelled = true; };
   }, [user, groupsLoading, loading, groups, activeGroup?.id]);
+
+  // On the Steps tab, push this phone's latest count up first, then pull the
+  // crew's numbers so your own row is fresh the moment you open it.
+  useEffect(() => {
+    if (tab !== 'steps' || !user || !activeGroup?.steps_enabled) return;
+    let active = true;
+    (async () => {
+      await syncMySteps(user.id).catch(() => {});
+      try {
+        const s = await getCrewSteps(activeGroup, user.id);
+        if (!active) return;
+        setSteps(s);
+        const cached = cacheRef.current.get(activeGroup.id);
+        if (cached) cacheRef.current.set(activeGroup.id, { ...cached, steps: s });
+      } catch {
+        // Keep whatever's on screen; a refresh or reopen will retry.
+      }
+    })();
+    return () => { active = false; };
+  }, [tab, activeGroup?.id, activeGroup?.steps_enabled, user]);
+
+  async function toggleSteps(next: boolean) {
+    if (!crew) return;
+    setSavingSteps(true);
+    try {
+      const updated = await setStepsEnabled(crew.group.id, next);
+      cacheRef.current.delete(updated.id); // reload cleanly with/without steps
+      setCrew({ ...crew, group: updated });
+      if (!next && tab === 'steps') setTab('members');
+      await setActiveGroup(updated);
+      await refreshGroups();
+      if (next && user) syncMySteps(user.id, true).catch(() => {});
+    } catch (error) {
+      showMessage('Could not update steps', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingSteps(false);
+    }
+  }
 
   async function nudge(member: CrewMember) {
     if (!crew) return;
@@ -305,6 +354,13 @@ export default function Crew() {
   const pct = total > 0 ? Math.min(1, today.inCount / total) : 0;
   const target = crew.group.target_days_per_week;
 
+  // The Steps tab only exists when the crew has turned the feature on.
+  const visibleTabs = crew.group.steps_enabled
+    ? [...BASE_TABS, { key: 'steps' as Tab, label: 'Steps' }, SETTINGS_TAB]
+    : [...BASE_TABS, SETTINGS_TAB];
+  // If steps got turned off while it was open, fall back to Members.
+  const activeTab: Tab = tab === 'steps' && !crew.group.steps_enabled ? 'members' : tab;
+
   // The crew pet's vibe, from how today's going.
   let petMood: Mood;
   let petMessage: string;
@@ -346,15 +402,15 @@ export default function Crew() {
 
         {/* Tabs */}
         <View style={styles.tabs}>
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <Pressable key={t.key} onPress={() => { select(); setTab(t.key); }} style={styles.tab}>
-              <Text style={[styles.tabText, tab === t.key && styles.tabTextOn]}>{t.label}</Text>
-              {tab === t.key ? <View style={styles.tabUnderline} /> : null}
+              <Text style={[styles.tabText, activeTab === t.key && styles.tabTextOn]}>{t.label}</Text>
+              {activeTab === t.key ? <View style={styles.tabUnderline} /> : null}
             </Pressable>
           ))}
         </View>
 
-        {tab === 'members' && (
+        {activeTab === 'members' && (
           <View style={{ gap: space(3) }}>
             <CrewPet mood={petMood} message={petMessage} />
             {crew.members.map((m) => (
@@ -371,14 +427,19 @@ export default function Crew() {
           </View>
         )}
 
-        {tab === 'feed' && <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />}
+        {activeTab === 'feed' && <Feed feed={feed} onToggle={onToggleReaction} myUserId={user?.id} />}
 
-        {tab === 'board' && <Board members={crew.members} target={target} />}
+        {activeTab === 'board' && <Board members={crew.members} target={target} />}
 
-        {tab === 'settings' && (
+        {activeTab === 'steps' && <StepsTab steps={steps} />}
+
+        {activeTab === 'settings' && (
           <SettingsTab
             crew={crew}
             isOwner={isOwner}
+            stepsEnabled={crew.group.steps_enabled}
+            savingSteps={savingSteps}
+            onToggleSteps={toggleSteps}
             onRename={() => { setRenameValue(crew.group.name); setRenaming(true); }}
             onShare={shareCode}
             onLeave={confirmLeave}
@@ -520,11 +581,78 @@ function Board({ members, target }: { members: CrewMember[]; target: number }) {
   );
 }
 
+// Thousands separators without leaning on Intl (Hermes builds vary).
+function fmt(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function StepsTab({ steps }: { steps: MemberSteps[] }) {
+  const styles = useStyles();
+  if (steps.length === 0) {
+    return (
+      <View style={styles.feedEmpty}>
+        <Text style={styles.feedEmptyText}>No steps yet</Text>
+        <Text style={styles.feedEmptySub}>Steps sync from each member’s iPhone. Check back after a walk.</Text>
+      </View>
+    );
+  }
+  const medals = ['🥇', '🥈', '🥉'];
+  const crewToday = steps.reduce((s, m) => s + m.today, 0);
+  const avgToday = Math.round(crewToday / steps.length);
+  const crewWeek = steps.reduce((s, m) => s + m.weekTotal, 0);
+  const topToday = Math.max(1, ...steps.map((m) => m.today));
+
+  return (
+    <View style={{ gap: space(3) }}>
+      <View style={styles.stepsSummary}>
+        <View style={styles.stepsStat}>
+          <Text style={styles.stepsBig}>{fmt(crewToday)}</Text>
+          <Text style={styles.stepsSmall}>steps today</Text>
+        </View>
+        <View style={styles.stepsDivider} />
+        <View style={styles.stepsStat}>
+          <Text style={styles.stepsBig}>{fmt(avgToday)}</Text>
+          <Text style={styles.stepsSmall}>avg / person</Text>
+        </View>
+      </View>
+
+      {steps.map((m, i) => {
+        const w = Math.min(1, m.today / topToday);
+        return (
+          <View key={m.profile.id} style={[styles.boardRow, i === 0 && styles.boardRowLead]}>
+            <Text style={styles.rank}>{medals[i] ?? `${i + 1}`}</Text>
+            <Avatar name={m.profile.display_name} color={colorFor(m.profile.id)} uri={m.profile.avatar_url} size={40} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.memberName}>{m.isMe ? 'You' : m.profile.display_name}</Text>
+              <Text style={styles.boardMeta}>{fmt(m.weekTotal)} steps this week</Text>
+              <View style={styles.boardTrack}><View style={[styles.stepsFill, { width: `${w * 100}%` }]} /></View>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.boardNum}>{fmt(m.today)}</Text>
+              <Text style={styles.boardNumLabel}>today</Text>
+            </View>
+          </View>
+        );
+      })}
+
+      <View style={styles.statsCard}>
+        <Text style={styles.statsTitle}>This week</Text>
+        <View style={styles.statsRow}><Text style={styles.statsLabel}>🚶 Total steps</Text><Text style={styles.statsVal}>{fmt(crewWeek)}</Text></View>
+        <View style={styles.statsRow}><Text style={styles.statsLabel}>👥 Members</Text><Text style={styles.statsVal}>{steps.length}</Text></View>
+      </View>
+      <Text style={styles.boardNote}>Steps sync from each member’s iPhone. Ranked by steps today.</Text>
+    </View>
+  );
+}
+
 function SettingsTab({
-  crew, isOwner, onRename, onShare, onLeave, onDelete,
+  crew, isOwner, stepsEnabled, savingSteps, onToggleSteps, onRename, onShare, onLeave, onDelete,
 }: {
-  crew: CrewView; isOwner: boolean; onRename: () => void; onShare: () => void; onLeave: () => void; onDelete: () => void;
+  crew: CrewView; isOwner: boolean; stepsEnabled: boolean; savingSteps: boolean;
+  onToggleSteps: (next: boolean) => void;
+  onRename: () => void; onShare: () => void; onLeave: () => void; onDelete: () => void;
 }) {
+  const { colors } = useTheme();
   const styles = useStyles();
   return (
     <View style={{ gap: space(3) }}>
@@ -533,6 +661,31 @@ function SettingsTab({
         <SettingRow label="Weekly goal" value={`${crew.group.target_days_per_week}× / week`} />
         <SettingRow label="Invite code" value={crew.group.invite_code} onPress={onShare} action="Share" />
       </View>
+
+      <View style={styles.setGroup}>
+        <View style={styles.setRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.setLabel}>Step tracking</Text>
+            <Text style={styles.setValue}>
+              {isOwner
+                ? 'Show everyone’s daily steps'
+                : stepsEnabled ? 'On for this crew' : 'Off for this crew'}
+            </Text>
+          </View>
+          {savingSteps ? (
+            <ActivityIndicator color={colors.coral} />
+          ) : (
+            <Switch
+              value={stepsEnabled}
+              onValueChange={onToggleSteps}
+              disabled={!isOwner}
+              trackColor={{ true: colors.coral, false: colors.surface2 }}
+              thumbColor={colors.onCoral}
+            />
+          )}
+        </View>
+      </View>
+
       <View style={styles.setGroup}>
         <Pressable onPress={onLeave} style={styles.setRow}>
           <Text style={styles.leaveText}>Leave crew</Text>
@@ -682,6 +835,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statsLabel: { fontFamily: fonts.ui, fontSize: 14, color: colors.inkSoft, fontWeight: '600' },
   statsVal: { fontFamily: fonts.display, fontSize: 16, fontWeight: '800', color: colors.ink },
   boardNote: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint, textAlign: 'center', marginTop: space(1), lineHeight: 17 },
+
+  // steps
+  stepsSummary: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space(4), alignItems: 'center' },
+  stepsStat: { flex: 1, alignItems: 'center', gap: 2 },
+  stepsBig: { fontFamily: fonts.display, fontSize: 26, fontWeight: '800', color: colors.ink, letterSpacing: -0.5 },
+  stepsSmall: { fontFamily: fonts.ui, fontSize: 12, fontWeight: '700', color: colors.inkFaint },
+  stepsDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.line, marginVertical: space(1) },
+  stepsFill: { height: '100%', borderRadius: 999, backgroundColor: colors.teal },
 
   // settings
   setGroup: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },

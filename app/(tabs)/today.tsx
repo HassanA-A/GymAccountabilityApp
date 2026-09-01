@@ -35,6 +35,7 @@ import {
   type WeekStatus,
 } from '@/lib/db';
 import { getCheckInLocation } from '@/lib/location';
+import { syncMySteps } from '@/lib/steps';
 import { Milo, type Mood } from '@/components/Milo';
 import { Celebration } from '@/components/Celebration';
 import { StreakDots } from '@/components/StreakDots';
@@ -110,6 +111,14 @@ export default function Today() {
     getIncomingNudges().then((n) => { if (active) setNudges(n); }).catch(() => {});
     return () => { active = false; };
   }, [refreshGroups]));
+
+  // Sync the phone's step count when the user is in a crew that tracks steps.
+  // Gated on the feature so we never prompt for motion access otherwise.
+  useEffect(() => {
+    if (user && groups.some((g) => g.steps_enabled)) {
+      syncMySteps(user.id).catch(() => {});
+    }
+  }, [user, groups]);
 
   async function dismissNudges() {
     setNudges([]);

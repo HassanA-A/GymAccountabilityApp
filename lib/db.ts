@@ -21,6 +21,17 @@ export type Group = {
   created_by: string;
   target_days_per_week: number;
   week_start_dow: number;
+  steps_enabled: boolean;
+};
+
+/** One crew member's step summary: today, the trailing 7-day total, and how
+ *  many of those days they logged (so averages don't punish empty days). */
+export type MemberSteps = {
+  profile: Profile;
+  today: number;
+  weekTotal: number;
+  daysLogged: number;
+  isMe: boolean;
 };
 
 export type CheckIn = {
@@ -162,6 +173,50 @@ export async function joinGroupByCode(code: string): Promise<Group> {
   });
   if (error) throw new Error(error.message);
   return data as Group;
+}
+
+/** Creator-only: turn the crew's step-tracking feature on or off. */
+export async function setStepsEnabled(groupId: string, enabled: boolean): Promise<Group> {
+  const { data, error } = await supabase
+    .from('groups')
+    .update({ steps_enabled: enabled })
+    .eq('id', groupId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Group;
+}
+
+/** Every member's step summary for a step-enabled crew, for the walked board. */
+export async function getCrewSteps(group: Group, myUserId: string): Promise<MemberSteps[]> {
+  const { data, error } = await supabase.rpc('crew_steps', {
+    p_group_id: group.id,
+    p_today: todayLocal(),
+  });
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as { user_id: string; today: number; week_total: number; days_logged: number }[];
+  if (rows.length === 0) return [];
+
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', rows.map((r) => r.user_id));
+  const byId = new Map((profs ?? []).map((p: any) => [p.id, p as Profile]));
+
+  return rows
+    .map((r) => {
+      const profile = byId.get(r.user_id);
+      if (!profile) return null;
+      return {
+        profile,
+        today: r.today,
+        weekTotal: r.week_total,
+        daysLogged: r.days_logged,
+        isMe: r.user_id === myUserId,
+      } satisfies MemberSteps;
+    })
+    .filter((m): m is MemberSteps => m !== null)
+    .sort((a, b) => b.today - a.today || b.weekTotal - a.weekTotal);
 }
 
 export async function getTodayCheckIn(groupId: string, userId: string): Promise<CheckIn | null> {

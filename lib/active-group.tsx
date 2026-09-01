@@ -24,7 +24,8 @@ function sameGroup(a: Group, b: Group): boolean {
     a.invite_code === b.invite_code &&
     a.target_days_per_week === b.target_days_per_week &&
     a.week_start_dow === b.week_start_dow &&
-    a.created_by === b.created_by
+    a.created_by === b.created_by &&
+    a.steps_enabled === b.steps_enabled
   );
 }
 
