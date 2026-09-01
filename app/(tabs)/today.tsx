@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Modal,
   Pressable,
   RefreshControl,
@@ -97,6 +98,12 @@ export default function Today() {
   const [postModal, setPostModal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
+  // Per-crew snapshot cache so switching crews swaps in instantly instead of
+  // flashing a spinner. loadedRef tracks whether we've ever shown data, so the
+  // full-screen spinner only appears on the very first load.
+  const cacheRef = useRef<Map<string, { checkIn: CheckIn | null; status: { inCount: number; total: number }; week: WeekStatus | null }>>(new Map());
+  const loadedRef = useRef(false);
+
   useFocusEffect(useCallback(() => {
     refreshGroups();
     let active = true;
@@ -148,8 +155,18 @@ export default function Today() {
     }
 
     let current = true;
-    setLoading(true);
-    setCheckIn(null);
+    const cached = cacheRef.current.get(group.id);
+    if (cached) {
+      // Seen this crew already — show it instantly, refresh quietly below.
+      setCheckIn(cached.checkIn);
+      setStatus(cached.status);
+      setWeek(cached.week);
+      setLoading(false);
+    } else if (!loadedRef.current) {
+      // Nothing on screen yet: only now is a spinner warranted.
+      setLoading(true);
+    }
+    // Otherwise keep the current crew's card visible while the new one loads.
     Promise.all([
       getTodayCheckIn(group.id, user.id),
       getTodayStatus(group.id),
@@ -158,13 +175,15 @@ export default function Today() {
     ])
       .then(([ci, st, wk, checked]) => {
         if (!current) return;
+        cacheRef.current.set(group.id, { checkIn: ci, status: st, week: wk });
+        loadedRef.current = true;
         setCheckIn(ci);
         setStatus(st);
         setWeek(wk);
         setCheckedToday(checked);
       })
       .catch((error) => {
-        if (current) showMessage('Could not load today', error instanceof Error ? error.message : 'Please try again.');
+        if (current && !cached) showMessage('Could not load today', error instanceof Error ? error.message : 'Please try again.');
       })
       .finally(() => current && setLoading(false));
     return () => { current = false; };
@@ -233,6 +252,9 @@ export default function Today() {
       setNote('');
       setDuration(null);
       setCheckedToday((prev) => [...prev, ...targets]);
+      // Drop cached snapshots for every crew we just posted to so a later
+      // switch shows their fresh "checked in" state (they refresh on focus).
+      targets.forEach((id) => cacheRef.current.delete(id));
 
       const mine = created.find((c) => c.group_id === group.id) ?? null;
       if (mine) {
@@ -241,6 +263,7 @@ export default function Today() {
         const [st, wk] = await Promise.all([getTodayStatus(group.id), getMyWeekStatus(group, user.id)]);
         setStatus(st);
         setWeek(wk);
+        cacheRef.current.set(group.id, { checkIn: mine, status: st, week: wk });
         setCelebrateStreak(wk.streak);
         setCelebrate(true);
       } else {
@@ -267,9 +290,13 @@ export default function Today() {
       tap();
       await undoTodayCheckIn(checkIn.id);
       setCheckIn(null);
+      setCheckedToday((prev) => (group ? prev.filter((id) => id !== group.id) : prev));
       if (group) {
-        setStatus(await getTodayStatus(group.id));
-        if (user) setWeek(await getMyWeekStatus(group, user.id));
+        const st = await getTodayStatus(group.id);
+        setStatus(st);
+        let wk = week;
+        if (user) { wk = await getMyWeekStatus(group, user.id); setWeek(wk); }
+        cacheRef.current.set(group.id, { checkIn: null, status: st, week: wk });
       }
     } catch (error) {
       showMessage('Could not undo', error instanceof Error ? error.message : 'Please try again.');
@@ -379,7 +406,9 @@ export default function Today() {
               placeholder="Add a note (optional)"
               placeholderTextColor={colors.inkFaint}
               maxLength={280}
-              multiline
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
               style={styles.noteInput}
             />
             {note.length > 240 ? <Text style={styles.noteCount}>{note.length}/280</Text> : null}
@@ -525,7 +554,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipOn: { backgroundColor: colors.coral, borderColor: colors.coral },
   chipText: { fontSize: 14, fontWeight: '700', color: colors.inkSoft },
   chipTextOn: { color: colors.onCoral },
-  noteInput: { minHeight: 78, marginTop: space(4), paddingHorizontal: space(4), paddingVertical: space(3), textAlignVertical: 'top', borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface2, color: colors.ink, fontSize: 15 },
+  noteInput: { marginTop: space(4), paddingHorizontal: space(4), paddingVertical: space(3.5), borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface2, color: colors.ink, fontSize: 15 },
   noteCount: { color: colors.inkFaint, fontSize: 11, textAlign: 'right', marginTop: space(1) },
   photoRow: { flexDirection: 'row', gap: space(3), marginTop: space(4) },
   photoBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space(2), borderWidth: 1.5, borderColor: colors.line, borderRadius: radius.md, paddingVertical: space(3.5), backgroundColor: colors.surface2 },

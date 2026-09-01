@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -81,6 +81,13 @@ export default function Crew() {
   const [savingName, setSavingName] = useState(false);
   const isOwner = !!crew && user?.id === crew.group.created_by;
 
+  // Per-crew snapshot cache so switching crews swaps instantly instead of
+  // flashing a spinner. We keep whatever's on screen while the newly-selected
+  // crew loads in the background, then swap it in (stale-while-revalidate).
+  const cacheRef = useRef<Map<string, { crew: CrewView; feed: FeedItem[]; today: { inCount: number; total: number } }>>(new Map());
+  const crewRef = useRef<CrewView | null>(null);
+  useEffect(() => { crewRef.current = crew; }, [crew]);
+
   async function submitRename() {
     if (!crew) return;
     const next = renameValue.trim();
@@ -113,6 +120,7 @@ export default function Crew() {
       getFeed(activeGroup.id, user.id),
       getTodayStatus(activeGroup.id),
     ]);
+    cacheRef.current.set(activeGroup.id, { crew: nextCrew, feed: nextFeed, today: nextToday });
     setCrew(nextCrew);
     setFeed(nextFeed);
     setToday(nextToday);
@@ -135,15 +143,26 @@ export default function Crew() {
     if (!activeGroup) {
       setCrew(null);
       setFeed([]);
+      setToday({ inCount: 0, total: 0 });
       setLoading(false);
       return;
     }
     let current = true;
-    setLoading(true);
-    setCrew(null);
+    const cached = cacheRef.current.get(activeGroup.id);
+    if (cached) {
+      // Seen this crew already — show it instantly, refresh quietly below.
+      setCrew(cached.crew);
+      setFeed(cached.feed);
+      setToday(cached.today);
+      setLoading(false);
+    } else if (!crewRef.current) {
+      // Nothing on screen yet: only now is a spinner warranted.
+      setLoading(true);
+    }
+    // Otherwise keep the current crew visible while the new one loads.
     load()
       .catch((error) => {
-        if (current) showMessage('Could not load crew', error instanceof Error ? error.message : 'Please try again.');
+        if (current && !cached) showMessage('Could not load crew', error instanceof Error ? error.message : 'Please try again.');
       })
       .finally(() => current && setLoading(false));
     return () => { current = false; };
