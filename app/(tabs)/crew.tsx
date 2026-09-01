@@ -66,7 +66,7 @@ function timeAgo(iso: string): string {
 export default function Crew() {
   const { user } = useAuth();
   const router = useRouter();
-  const { activeGroup, loading: groupsLoading, refreshGroups, setActiveGroup } = useActiveGroup();
+  const { activeGroup, groups, loading: groupsLoading, refreshGroups, setActiveGroup } = useActiveGroup();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [crew, setCrew] = useState<CrewView | null>(null);
@@ -167,6 +167,31 @@ export default function Crew() {
       .finally(() => current && setLoading(false));
     return () => { current = false; };
   }, [activeGroup?.id, groupsLoading, user, load]);
+
+  // Once the active crew is on screen, quietly warm the other crews in the
+  // background so the first switch to any of them is instant too. Best-effort:
+  // one at a time, skipping any we've already cached.
+  useEffect(() => {
+    if (!user || groupsLoading || loading || groups.length < 2) return;
+    let cancelled = false;
+    (async () => {
+      for (const g of groups) {
+        if (cancelled) return;
+        if (g.id === activeGroup?.id || cacheRef.current.has(g.id)) continue;
+        try {
+          const [c, f, t] = await Promise.all([
+            getCrew(g, user.id),
+            getFeed(g.id, user.id),
+            getTodayStatus(g.id),
+          ]);
+          if (!cancelled) cacheRef.current.set(g.id, { crew: c, feed: f, today: t });
+        } catch {
+          // Prefetch is best-effort; the real switch will load it for sure.
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, groupsLoading, loading, groups, activeGroup?.id]);
 
   async function nudge(member: CrewMember) {
     if (!crew) return;

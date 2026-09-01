@@ -189,6 +189,31 @@ export default function Today() {
     return () => { current = false; };
   }, [group?.id, groupsLoading, user]);
 
+  // Once the active crew is on screen, quietly warm the other crews in the
+  // background so the first switch to any of them is instant too. Best-effort:
+  // one at a time, skipping any we've already cached.
+  useEffect(() => {
+    if (!user || groupsLoading || loading || groups.length < 2) return;
+    let cancelled = false;
+    (async () => {
+      for (const g of groups) {
+        if (cancelled) return;
+        if (g.id === group?.id || cacheRef.current.has(g.id)) continue;
+        try {
+          const [ci, st, wk] = await Promise.all([
+            getTodayCheckIn(g.id, user.id),
+            getTodayStatus(g.id),
+            getMyWeekStatus(g, user.id),
+          ]);
+          if (!cancelled) cacheRef.current.set(g.id, { checkIn: ci, status: st, week: wk });
+        } catch {
+          // Prefetch is best-effort; the real switch will load it for sure.
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, groupsLoading, loading, groups, group?.id]);
+
   async function takePhoto() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
