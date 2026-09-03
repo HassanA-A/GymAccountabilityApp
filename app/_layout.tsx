@@ -19,7 +19,10 @@ function Gate() {
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
-    if (!session && !inAuth) {
+    // /privacy is public — the App Store reviewer and anyone else can read it
+    // without an account, so it must never bounce to sign-in.
+    const isPublic = segments[0] === 'privacy';
+    if (!session && !inAuth && !isPublic) {
       router.replace('/(auth)/sign-in');
     } else if (session && inAuth) {
       router.replace('/');

@@ -235,6 +235,10 @@ export default function You() {
                 <Text style={styles.linkLabel}>Edit profile</Text><Text style={styles.chev}>›</Text>
               </Pressable>
               <View style={styles.rowDivider} />
+              <Pressable onPress={() => router.push('/privacy')} style={styles.linkRow}>
+                <Text style={styles.linkLabel}>Privacy policy</Text><Text style={styles.chev}>›</Text>
+              </Pressable>
+              <View style={styles.rowDivider} />
               <View style={styles.linkRow}>
                 <Text style={styles.linkLabel}>About Huddle</Text><Text style={styles.muted}>v1.0</Text>
               </View>
